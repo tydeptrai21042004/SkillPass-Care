@@ -1,0 +1,11 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      PORT: 8787
+      WEB_ORIGIN: http://localhost:5173
+      LEDGER_MODE: memory
+    ports:
+      - "8787:8787"

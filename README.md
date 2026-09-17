@@ -60,32 +60,3 @@ Run verification with:
 npm run check
 ```
 
-## Deploy to Vercel
-
-The repository is configured to deploy from the **repository root**.
-
-For the public demo, the only recommended environment variable is:
-
-```env
-DEMO_SESSION_SECRET=<long-random-secret>
-```
-
-The defaults already use:
-
-```env
-ENABLE_DEMO_ENDPOINTS=true
-LEDGER_MODE=memory
-```
-
-Then import the repository into Vercel and deploy. `vercel.json` builds the workspace packages and Vite frontend, while `api/[...path].ts` exposes the Express API under `/api/*`.
-
-See `docs/DEPLOYMENT.md` for production profiles and post-deploy verification.
-
-## Important production boundary
-
-Do **not** treat `LEDGER_MODE=memory` as durable multi-instance production storage. For a real service launch, either:
-
-- implement the CKB live-Cell read/write path and wallet-signed transitions, or
-- add a durable database-backed pilot ledger before exposing authenticated mutable state at scale.
-
-`LEDGER_MODE=ckb` intentionally remains not-ready in this version rather than faking chain-backed ownership.

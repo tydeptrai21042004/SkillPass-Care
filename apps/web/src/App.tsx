@@ -29,11 +29,17 @@ export function App() {
   const usedService = Boolean(right && right.remainingClaims < 3);
 
   useEffect(() => {
-    Promise.all([client.state(), client.meta()])
-      .then(([state, apiMeta]) => {
-        setRight(state);
+    client.meta()
+      .then(async (apiMeta) => {
         setMeta(apiMeta);
+        if (!apiMeta.demoEnabled || !apiMeta.demoRoute) {
+          throw new Error(
+            "Public demo endpoints are disabled. Set ENABLE_DEMO_ENDPOINTS=true for the Vercel demo deployment, then redeploy."
+          );
+        }
+        return client.state(apiMeta.demoRoute);
       })
+      .then((state) => setRight(state))
       .catch((error) => setFatal(message(error)))
       .finally(() => setLoading(false));
   }, []);

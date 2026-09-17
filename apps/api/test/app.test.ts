@@ -144,8 +144,18 @@ describe("API", () => {
     expect(response.body.error.requestId).toBeTruthy();
   });
 
+  it("advertises the public demo route in metadata when enabled", async () => {
+    const { app } = await setup(true);
+    const meta = await request(app).get("/meta").expect(200);
+    expect(meta.body.demoEnabled).toBe(true);
+    expect(meta.body.demoRoute).toBe("/demo/state");
+  });
+
   it("can completely disable demo endpoints", async () => {
     const { app } = await setup(false);
+    const meta = await request(app).get("/meta").expect(200);
+    expect(meta.body.demoEnabled).toBe(false);
+    expect(meta.body.demoRoute).toBeNull();
     await request(app).post("/demo/reset").expect(404);
     await request(app).get("/demo/state").expect(404);
   });

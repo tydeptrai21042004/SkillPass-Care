@@ -27,13 +27,20 @@ npm install --production=false --no-audit --no-fund
 
 ### 2. Add environment variables
 
-Recommended for the public demo:
+Required secret for the public demo:
 
 ```env
 DEMO_SESSION_SECRET=<at-least-32-random-bytes>
+```
+
+For this repository's Vercel deployment, `vercel.json` deliberately pins the two **non-secret** public-demo flags passed to Vercel Functions:
+
+```env
 ENABLE_DEMO_ENDPOINTS=true
 LEDGER_MODE=memory
 ```
+
+This prevents the web UI from deploying successfully while `/api/demo/*` is accidentally disabled. Keep `DEMO_SESSION_SECRET` in Vercel Project Settings rather than source control.
 
 `DEMO_SESSION_SECRET` protects the integrity of the demo cookie. The public demo is still explicitly non-authoritative and must never be treated as a real ownership proof.
 
@@ -46,7 +53,8 @@ Check:
 ```text
 GET /api/health/live   -> 200
 GET /api/health/ready  -> 200 in memory demo mode
-GET /api/meta          -> demoEnabled: true
+GET /api/meta          -> demoEnabled: true, demoRoute: "/demo/state"
+GET /api/demo/state    -> 200
 ```
 
 Then run the UI lifecycle:
@@ -59,7 +67,7 @@ Reload the page after transfer. The demo state should remain in the same browser
 
 ## Authenticated off-chain pilot
 
-To disable public demo routes and expose the credential-bound pilot API:
+To disable public demo routes and expose the credential-bound pilot API, first remove the public-demo `env` block from `vercel.json` (or use a separate deployment configuration), then configure:
 
 ```env
 NODE_ENV=production

@@ -108,6 +108,7 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         name: "SkillPass Care",
         apiVersion: "0.3.0",
         demoEnabled: Boolean(options.demoEnabled),
+        demoRoute: options.demoEnabled ? "/demo/state" : null,
         ledgerMode: health.mode,
         ledgerReady: health.ready,
         ckbImplemented: false

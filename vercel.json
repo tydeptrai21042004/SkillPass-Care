@@ -51,5 +51,9 @@
     }
   ],
   "framework": null,
-  "installCommand": "npm install --production=false --no-audit --no-fund"
+  "installCommand": "npm install --production=false --no-audit --no-fund",
+  "env": {
+    "ENABLE_DEMO_ENDPOINTS": "true",
+    "LEDGER_MODE": "memory"
+  }
 }

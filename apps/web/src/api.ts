@@ -31,6 +31,7 @@ export interface ApiMeta {
   name: string;
   apiVersion: string;
   demoEnabled: boolean;
+  demoRoute: string | null;
   ledgerMode: "memory" | "ckb";
   ledgerReady: boolean;
   ckbImplemented: boolean;
@@ -62,7 +63,7 @@ async function json<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const client = {
   meta: () => json<ApiMeta>("/meta"),
-  state: () => json<ServiceRight>("/demo/state"),
+  state: (route = "/demo/state") => json<ServiceRight>(route),
   reset: () => json<ServiceRight>("/demo/reset", { method: "POST", body: "{}" }),
   transfer: (id: string, from: string, to: string, expectedVersion?: number) =>
     json<ServiceRight>(`/demo/entitlements/${encodeURIComponent(id)}/transfer`, {

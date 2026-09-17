@@ -1,0 +1,3 @@
+# Files that MUST be deleted from the existing repository
+api/[...path].ts
+api/index.ts

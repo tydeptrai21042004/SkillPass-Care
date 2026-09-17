@@ -48,6 +48,15 @@ You normally do **not** need `WEB_ORIGINS` on Vercel because the browser calls `
 
 ### 3. Verify after deployment
 
+The deployment uses a fixed Vercel Function at `api/router.ts` and explicit
+rewrites for `/api` and `/api/:path*`. This is intentional: it avoids relying
+on framework-style splat-function discovery for the standalone Vite app.
+
+The old `api/[...path].ts` and `api/index.ts` entrypoints must not be present
+in the deployed repository. Vercel gives filesystem routes precedence over
+rewrites, so leaving the old splat function in place can intercept `/api/meta`
+before the fixed router rewrite runs.
+
 Check:
 
 ```text
@@ -64,6 +73,27 @@ Reset → Verify Alice → Transfer to Bob → Reject Alice → Verify Bob → U
 ```
 
 Reload the page after transfer. The demo state should remain in the same browser session.
+
+
+### Vercel `404 NOT_FOUND` on `/api/meta`
+
+If Vercel's own 404 page appears (rather than the API's JSON `NOT_FOUND`
+response), the request never reached Express. Confirm that the deployed
+`vercel.json` contains these rewrites:
+
+```json
+"rewrites": [
+  { "source": "/api", "destination": "/api/router" },
+  {
+    "source": "/api/:path*",
+    "destination": "/api/router?__skillpass_path=:path*"
+  }
+]
+```
+
+Also confirm the deployment contains `api/router.ts` and that the Vercel
+project Root Directory is the repository root. Do not point the Root Directory
+at `apps/api` or `apps/web`.
 
 ## Authenticated off-chain pilot
 

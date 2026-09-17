@@ -3,10 +3,7 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "apps/web/dist",
   "functions": {
-    "api/[...path].ts": {
-      "maxDuration": 10
-    },
-    "api/index.ts": {
+    "api/router.ts": {
       "maxDuration": 10
     }
   },
@@ -55,5 +52,15 @@
   "env": {
     "ENABLE_DEMO_ENDPOINTS": "true",
     "LEDGER_MODE": "memory"
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api",
+      "destination": "/api/router"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/router?__skillpass_path=:path*"
+    }
+  ]
 }

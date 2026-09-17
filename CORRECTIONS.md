@@ -1,29 +1,49 @@
-# Correction Summary — v0.2.0
+# Correction Summary — v0.3.0
 
-## Implemented
+## Vercel deployment
 
-- Authenticated issuer/provider/owner boundaries for non-demo HTTP routes.
-- Demo-only actor simulation isolated under `/demo/*` and forbidden in production configuration.
-- Stable domain/API errors with correct 400/401/403/404/409/503 classes.
-- Optimistic `expectedVersion` protection for mutable entitlement state.
-- `ACTIVE` / `SUSPENDED` / irreversible `REVOKED` lifecycle.
-- Claim exhaustion and same-process final-claim concurrency protection/tests.
-- Provider verification evidence (provider, claimant, entitlement version, timestamp).
-- Separate liveness and readiness endpoints.
-- CKB RPC diagnostic probe with fail-closed readiness/state operations.
-- Correct TypeScript build output layout (`src` only) plus separate test typecheck configs.
-- Root `.env` loading for the API and root Vite `envDir` for the web application.
-- `.env.example`, `.gitignore`, GitHub Actions CI and updated Docker/local configuration.
-- Product/reviewer UI split and clearer lifecycle activity evidence.
-- Expanded tests and corrected documentation.
+- Added root `vercel.json` for a Vite static frontend plus Node API functions.
+- Added `/api/[...path].ts` and `/api/index.ts` Vercel entrypoints.
+- Added `npm run build:vercel` and same-origin Vite `/api` proxy behavior.
+- Public demo state no longer depends on function/process memory; it uses a signed, HttpOnly browser-session cookie.
+- Added production/static security headers and immutable asset caching.
+- Added a Vercel deployment guide and post-deploy smoke-test instructions.
 
-## Deliberately not faked
+## API and security
 
-The repository does not fabricate a live CKB transfer. `LEDGER_MODE=ckb` remains not-ready until a versioned SkillPass Cell schema, deployed type script, wallet-signed transaction construction, live-Cell resolver, confirmation policy and durable multi-provider claim semantics are implemented.
+- Protected entitlement list/detail routes with actor authentication.
+- Required `expectedVersion` on authenticated transfer, claim and status mutations.
+- Improved authentication failure messages to avoid credential-detail leakage.
+- Added API metadata route, no-store responses, HSTS in production, CSP/permissions headers, request IDs and optional explicit CORS.
+- Added demo-session integrity validation and session-isolation tests.
 
-## Validation performed in the correction environment
+## Domain consistency
 
-- Parsed every `package.json` successfully.
-- TypeScript/TSX syntax transpilation passed across the source tree.
-- Executed a dependency-free runtime invariant check of the core/memory/provider lifecycle, including Alice→Bob authorization movement, stale version rejection and concurrent final-claim behavior.
-- Full `npm install`/Vitest/build could not be executed because the correction environment could not reach the npm registry; no lockfile or passing-test claim was fabricated.
+- Added shared pure transition functions for transfer, claim and status changes.
+- Reused the same transition semantics in the memory ledger and public demo.
+- Preserved the fail-closed CKB adapter and explicit non-on-chain demo wording.
+
+## Product UI
+
+- Reworked the frontend into a polished product/reviewer experience.
+- Added responsive lifecycle visualization, current-holder state, provider acceptance, progress cues, API status, evidence log, loading/error states and reviewer readiness details.
+- Made the CKB implementation boundary visible instead of implying unsupported chain functionality.
+
+## Repository quality
+
+- Added `.env.example`, `.gitignore`, GitHub Actions CI and Vercel-specific TypeScript configuration.
+- Updated API, architecture, security, deployment and verification documentation.
+- Bumped workspace package versions to `0.3.0`.
+
+## Validation performed here
+
+- Parsed all JSON manifests successfully.
+- Verified all relative source imports resolve to files.
+- Type-checked the core/shared/ledger/provider sources.
+- Type-checked web source and API source using local dependency type stubs because registry access was unavailable.
+- Parsed CSS with no stylesheet parse errors and verified the HTML entry structure.
+- Executed a compiled core lifecycle runtime check: Alice allowed → transfer to Bob → Alice denied → Bob claim decrements visits and advances version.
+
+## Environment limitation
+
+The execution environment could not reach the npm registry, so a real `npm install`, Vitest run, Vite production build, or Vercel CLI deployment could not be executed here. I did not fabricate a lockfile or claim those dependency-backed checks passed. Run `npm install && npm run check` once in a networked environment before merging/deploying.

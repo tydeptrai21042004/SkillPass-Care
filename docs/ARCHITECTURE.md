@@ -1,6 +1,6 @@
 # Architecture
 
-## Core invariant
+## Core authorization invariant
 
 For provider `p`, claimant `u` and entitlement `e`, authorization succeeds only when:
 
@@ -13,7 +13,46 @@ AND p is accepted by entitlement policy
 AND remainingClaims > 0
 ```
 
-After a transfer, all providers that resolve current state must reject the previous owner and accept the new owner when all other policy conditions hold.
+After a transfer, providers resolving the same current state must reject the previous holder and may accept the new holder when all other policy conditions hold.
+
+## Deployment layers
+
+```text
+Browser
+  │
+  ├── Product/reviewer UI (Vite static output)
+  │
+  └── /api/*
+        │
+        ├── /demo/*  → signed browser-session state (public showcase)
+        │
+        └── authenticated API
+              │
+              └── ServiceRightLedger
+                    ├── InMemoryLedger (local/single-process pilot)
+                    └── CkbLedgerAdapter (currently fail-closed)
+```
+
+The public demo does not use process memory for lifecycle state. That makes it deterministic across serverless function instances while keeping it clearly non-authoritative.
+
+## Shared transition logic
+
+`packages/core/src/transitions.ts` owns transfer, claim, and status transition rules. Both the memory ledger and public demo route layer call these functions, reducing semantic drift between the showcase and API behavior.
+
+## Optimistic mutation rule
+
+Authenticated HTTP mutations require `expectedVersion`:
+
+```text
+client observed version N
+        ↓
+mutation requires version N
+        ↓
+state is still N → commit N+1
+state already changed → 409 VERSION_CONFLICT
+```
+
+Real CKB atomicity ultimately comes from Cell consumption, not from this JavaScript version field.
 
 ## Trust boundaries
 
@@ -26,34 +65,7 @@ Provider A ───── authenticated provider A ─────────�
 Provider B ───── authenticated provider B ─────────┘
 ```
 
-The browser demonstration is separate and uses only `/demo/*` routes. Those routes intentionally simulate actors and are not a security boundary.
-
-## Domain model
-
-A `ServiceRight` contains a stable pilot ID, issuer, privacy-preserving product commitment, current owner principal, service class, remaining claim count, expiry, transfer flag, accepted providers, status and monotonically increasing version.
-
-In the memory pilot, `owner` is stored directly. In a CKB implementation it must be **derived from the lock script of the canonical live Cell** and should not be duplicated as authoritative Cell data.
-
-## Optimistic mutation rule
-
-State-changing operations may provide `expectedVersion`:
-
-```text
-client observed version N
-        ↓
-mutation requires version N
-        ↓
-ledger is still N → commit N+1
-ledger already changed → 409 conflict
-```
-
-This protects the pilot from silent lost updates. Real CKB atomicity ultimately comes from Cell consumption, not from a JavaScript version field.
-
-## Provider independence
-
-`packages/provider-sdk` takes a fixed provider identity plus a ledger resolver. It resolves the entitlement before each decision and returns evidence containing the provider, claimant, version and verification time.
-
-For a stronger decentralization demonstration, deploy Provider A and Provider B as separate backend processes that each resolve the same CKB state rather than routing both through one central API.
+The `/demo/*` routes are a separate non-authoritative boundary. They intentionally simulate actors and store state in a signed browser session.
 
 ## CKB production mapping
 
@@ -64,7 +76,7 @@ state/policy         -> versioned Cell data and/or committed policy hash
 issue                -> wallet/issuer signed creation transaction
 transfer             -> consume current Cell + create successor owned by recipient
 get                   -> resolve exactly one canonical live Cell
-claim                 -> explicitly defined atomic on-chain transition OR durable off-chain receipt model
+claim                 -> explicitly defined atomic on-chain transition OR durable receipt model
 ```
 
-The current `CkbLedgerAdapter` deliberately does not invent these operations. It exposes RPC health for diagnostics and returns not-ready until the protocol details are actually implemented.
+The current `CkbLedgerAdapter` does not invent these operations. It reports RPC diagnostics and remains not-ready until the protocol implementation exists.

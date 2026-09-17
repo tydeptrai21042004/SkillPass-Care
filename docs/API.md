@@ -1,8 +1,10 @@
 # API Reference
 
-Default base URL: `http://localhost:8787`.
+Local API base URL: `http://localhost:8787`.
 
-All errors use:
+Browser/Vercel base URL: `/api` on the same deployment origin.
+
+All API responses include `x-request-id`. Errors use:
 
 ```json
 {
@@ -14,24 +16,31 @@ All errors use:
 }
 ```
 
-## Health
+## Health and metadata
 
 ### `GET /health/live`
-Process liveness only.
+Process/function liveness only.
 
 ### `GET /health/ready`
-Returns ledger readiness. Memory mode is ready. CKB mode is deliberately `503` until the real SkillPass Cell state-transition adapter exists.
+Returns ledger readiness. Memory mode is ready for demo/local pilot behavior. CKB mode deliberately returns `503` until the real SkillPass Cell adapter exists.
 
 ### `GET /health`
 Alias for readiness.
 
-## Read routes
+### `GET /meta`
+Returns non-secret deployment capabilities such as API version, demo enablement, ledger mode and CKB implementation status.
 
-### `GET /entitlements`
-Lists currently resolved pilot entitlements.
+## Credential-protected reads
 
-### `GET /entitlements/:id`
-Returns one entitlement or `404`.
+`GET /entitlements` and `GET /entitlements/:id` require any valid configured issuer, provider or owner credential. They are not public discovery endpoints.
+
+Supported actor headers are:
+
+```text
+x-issuer-id / x-issuer-key
+x-provider-id / x-provider-key
+x-owner-id / x-owner-key
+```
 
 ## Authenticated issuer routes
 
@@ -56,15 +65,18 @@ x-issuer-key: <server-configured secret>
 }
 ```
 
-`issuerId` is taken from the authenticated header and cannot be selected in JSON.
+`issuerId` comes from authenticated credentials and cannot be selected in JSON.
 
 ### `PATCH /entitlements/:id/status`
 
 ```json
-{"status":"SUSPENDED","expectedVersion":2}
+{
+  "status": "SUSPENDED",
+  "expectedVersion": 2
+}
 ```
 
-Allowed status values: `ACTIVE`, `SUSPENDED`, `REVOKED`. Revocation is irreversible in the pilot ledger.
+`expectedVersion` is required. Allowed status values are `ACTIVE`, `SUSPENDED`, and `REVOKED`. Revocation is irreversible in the memory pilot.
 
 ## Authenticated owner transfer
 
@@ -78,10 +90,13 @@ x-owner-key: <server-configured secret>
 ### `POST /entitlements/:id/transfer`
 
 ```json
-{"to":"bob","expectedVersion":1}
+{
+  "to": "bob",
+  "expectedVersion": 1
+}
 ```
 
-The transfer source is the authenticated owner, not a `from` field supplied by the request body. A stale `expectedVersion` returns `409`.
+The transfer source comes from the authenticated owner identity, not a caller-supplied `from` field. `expectedVersion` is required and a stale version returns `409 VERSION_CONFLICT`.
 
 ## Authenticated provider routes
 
@@ -95,24 +110,36 @@ x-provider-key: <server-configured secret>
 ### `POST /entitlements/:id/verify`
 
 ```json
-{"claimant":"bob"}
+{
+  "claimant": "bob"
+}
 ```
 
-The response includes verification evidence: provider ID, claimant, entitlement version and verification timestamp.
+The response includes provider ID, claimant, entitlement version, verification result/reason and timestamp.
 
 ### `POST /entitlements/:id/claim`
 
 ```json
-{"claimant":"bob","expectedVersion":2}
+{
+  "claimant": "bob",
+  "expectedVersion": 2
+}
 ```
 
-## Demo-only routes
+`expectedVersion` is required.
+
+## Public demo routes
 
 Available only when `ENABLE_DEMO_ENDPOINTS=true`:
 
-- `POST /demo/reset`
-- `POST /demo/entitlements/:id/transfer`
-- `POST /demo/entitlements/:id/verify`
-- `POST /demo/entitlements/:id/claim`
+```text
+GET  /demo/state
+POST /demo/reset
+POST /demo/entitlements/:id/transfer
+POST /demo/entitlements/:id/verify
+POST /demo/entitlements/:id/claim
+```
 
-They intentionally allow named Alice/Bob/provider simulation so the browser can demonstrate the lifecycle without embedding server credentials. Production configuration rejects `ENABLE_DEMO_ENDPOINTS=true`.
+The demo uses a signed, HttpOnly browser-session cookie instead of process memory. It intentionally allows named Alice/Bob/provider simulation and is **not an ownership-security boundary**.
+
+Demo mutation requests also include `expectedVersion` so the showcase exercises the same optimistic transition semantics as the authenticated API.

@@ -1,13 +1,14 @@
 import { z } from "zod";
 
-const bool = z.enum(["true", "false"]).transform((v) => v === "true");
+const bool = z.enum(["true", "false"]).transform((v: string) => v === "true");
 
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(8787),
-  WEB_ORIGINS: z.string().default("http://localhost:5173"),
+  WEB_ORIGINS: z.string().default(""),
   LEDGER_MODE: z.enum(["memory", "ckb"]).default("memory"),
   ENABLE_DEMO_ENDPOINTS: bool.default("true"),
+  DEMO_SESSION_SECRET: z.string().default(""),
   ISSUER_KEYS: z.string().default(""),
   PROVIDER_KEYS: z.string().default(""),
   OWNER_KEYS: z.string().default(""),
@@ -21,6 +22,7 @@ export interface AppConfig {
   WEB_ORIGINS: string[];
   LEDGER_MODE: "memory" | "ckb";
   ENABLE_DEMO_ENDPOINTS: boolean;
+  DEMO_SESSION_SECRET: string;
   ISSUER_KEYS: Record<string, string>;
   PROVIDER_KEYS: Record<string, string>;
   OWNER_KEYS: Record<string, string>;
@@ -32,19 +34,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const parsed = schema.parse(env);
   const config: AppConfig = {
     ...parsed,
-    WEB_ORIGINS: parsed.WEB_ORIGINS.split(",").map((x) => x.trim()).filter(Boolean),
+    WEB_ORIGINS: parsed.WEB_ORIGINS.split(",").map((x: string) => x.trim()).filter(Boolean),
     ISSUER_KEYS: parseKeyMap(parsed.ISSUER_KEYS, "ISSUER_KEYS"),
     PROVIDER_KEYS: parseKeyMap(parsed.PROVIDER_KEYS, "PROVIDER_KEYS"),
     OWNER_KEYS: parseKeyMap(parsed.OWNER_KEYS, "OWNER_KEYS")
   };
-  if (config.WEB_ORIGINS.length === 0) throw new Error("WEB_ORIGINS must contain at least one origin");
-  if (config.NODE_ENV === "production") {
-    if (config.ENABLE_DEMO_ENDPOINTS) throw new Error("ENABLE_DEMO_ENDPOINTS must be false in production");
-    if (config.LEDGER_MODE === "memory") {
-      if (Object.keys(config.ISSUER_KEYS).length === 0) throw new Error("ISSUER_KEYS is required for production memory mode");
-      if (Object.keys(config.PROVIDER_KEYS).length === 0) throw new Error("PROVIDER_KEYS is required for production memory mode");
-      if (Object.keys(config.OWNER_KEYS).length === 0) throw new Error("OWNER_KEYS is required for production memory mode");
-    }
+
+  // Public demo mode is safe to deploy without actor secrets because /demo is explicitly
+  // non-authoritative and stores state in a signed browser session. Authenticated routes
+  // remain closed when no credentials are configured.
+  if (config.NODE_ENV === "production" && !config.ENABLE_DEMO_ENDPOINTS && config.LEDGER_MODE === "memory") {
+    if (Object.keys(config.ISSUER_KEYS).length === 0) throw new Error("ISSUER_KEYS is required for production pilot mode");
+    if (Object.keys(config.PROVIDER_KEYS).length === 0) throw new Error("PROVIDER_KEYS is required for production pilot mode");
+    if (Object.keys(config.OWNER_KEYS).length === 0) throw new Error("OWNER_KEYS is required for production pilot mode");
   }
   return config;
 }

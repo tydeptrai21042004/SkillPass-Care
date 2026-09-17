@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { evaluateAuthorization, type CreateServiceRightInput, type ServiceRight } from "@skillpass/core";
+import {
+  claimServiceRight,
+  setServiceRightStatus,
+  transferServiceRight,
+  type CreateServiceRightInput,
+  type ServiceRight
+} from "@skillpass/core";
 import {
   SkillPassError,
   type EntitlementId,
@@ -67,13 +73,10 @@ export class InMemoryLedger implements ServiceRightLedger {
     to: Principal,
     options: MutationOptions = {}
   ): Promise<ServiceRight> {
-    const right = this.requireMutable(id, options);
-    this.requireActiveAndUnexpired(right);
-    if (!right.transferable) throw new SkillPassError("FORBIDDEN", "entitlement is not transferable", 403);
-    if (right.owner !== from) throw new SkillPassError("FORBIDDEN", "transfer actor is not current owner", 403);
-    const nextOwner = requireText(to, "to");
-    if (nextOwner === from) throw new SkillPassError("VALIDATION_ERROR", "new owner must be different", 400);
-    return this.commit({ ...right, owner: nextOwner });
+    const right = this.require(id);
+    const next = transferServiceRight(right, from, to, options);
+    this.rights.set(next.id, next);
+    return clone(next);
   }
 
   async claim(
@@ -82,12 +85,10 @@ export class InMemoryLedger implements ServiceRightLedger {
     providerId: ProviderId,
     options: MutationOptions = {}
   ): Promise<ServiceRight> {
-    const right = this.requireMutable(id, options);
-    const decision = evaluateAuthorization(right, { entitlementId: id, claimant, providerId });
-    if (!decision.allowed) {
-      throw new SkillPassError("FORBIDDEN", `claim denied: ${decision.reason}`, 403);
-    }
-    return this.commit({ ...right, remainingClaims: right.remainingClaims - 1 });
+    const right = this.require(id);
+    const next = claimServiceRight(right, claimant, providerId, options);
+    this.rights.set(next.id, next);
+    return clone(next);
   }
 
   async setStatus(
@@ -96,13 +97,10 @@ export class InMemoryLedger implements ServiceRightLedger {
     status: EntitlementStatus,
     options: MutationOptions = {}
   ): Promise<ServiceRight> {
-    const right = this.requireMutable(id, options);
-    if (right.issuerId !== issuerId) throw new SkillPassError("FORBIDDEN", "issuer does not control entitlement", 403);
-    if (right.status === "REVOKED") {
-      throw new SkillPassError("FORBIDDEN", "revoked entitlement cannot change status", 403);
-    }
-    if (status === right.status) return clone(right);
-    return this.commit({ ...right, status });
+    const right = this.require(id);
+    const next = setServiceRightStatus(right, issuerId, status, options);
+    this.rights.set(next.id, next);
+    return clone(next);
   }
 
   async health(): Promise<LedgerHealth> {
@@ -129,32 +127,9 @@ export class InMemoryLedger implements ServiceRightLedger {
     return right;
   }
 
-  private requireMutable(id: EntitlementId, options: MutationOptions): ServiceRight {
-    const right = this.require(id);
-    if (options.expectedVersion !== undefined && right.version !== options.expectedVersion) {
-      throw new SkillPassError(
-        "VERSION_CONFLICT",
-        `stale entitlement version: expected ${options.expectedVersion}, current ${right.version}`,
-        409
-      );
-    }
-    return right;
-  }
 
-  private requireActiveAndUnexpired(right: ServiceRight): void {
-    if (right.status !== "ACTIVE") throw new SkillPassError("FORBIDDEN", `entitlement is ${right.status.toLowerCase()}`, 403);
-    if (Date.parse(right.expiresAt) <= Date.now()) throw new SkillPassError("FORBIDDEN", "entitlement is expired", 403);
-  }
 
-  private commit(right: ServiceRight): ServiceRight {
-    const next: ServiceRight = {
-      ...right,
-      version: right.version + 1,
-      updatedAt: new Date().toISOString()
-    };
-    this.rights.set(next.id, next);
-    return clone(next);
-  }
+
 }
 
 function clone<T>(value: T): T {

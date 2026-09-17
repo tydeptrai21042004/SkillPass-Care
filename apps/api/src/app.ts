@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import cors from "cors";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { z, ZodError } from "zod";
 import type { ServiceRightLedger } from "@skillpass/ckb-adapter";
 import { ProviderVerifier } from "@skillpass/provider-sdk";
 import { SkillPassError } from "@skillpass/shared";
-import { authenticate, type CredentialRegistry } from "./auth.js";
+import { authenticate, authenticateAny, type CredentialRegistry } from "./auth.js";
+import { createDemoRouter } from "./demo-session.js";
 
 const createSchema = z.object({
   productHash: z.string().trim().min(1).max(512),
@@ -19,39 +20,30 @@ const createSchema = z.object({
 
 const transferSchema = z.object({
   to: z.string().trim().min(1).max(256),
-  expectedVersion: z.number().int().positive().optional()
+  expectedVersion: z.number().int().positive()
 }).strict();
 
 const verifySchema = z.object({ claimant: z.string().trim().min(1).max(256) }).strict();
 const claimSchema = z.object({
   claimant: z.string().trim().min(1).max(256),
-  expectedVersion: z.number().int().positive().optional()
+  expectedVersion: z.number().int().positive()
 }).strict();
 const statusSchema = z.object({
   status: z.enum(["ACTIVE", "SUSPENDED", "REVOKED"]),
-  expectedVersion: z.number().int().positive().optional()
-}).strict();
-
-const demoActorSchema = z.object({
-  from: z.string().trim().min(1).max(256),
-  to: z.string().trim().min(1).max(256),
-  expectedVersion: z.number().int().positive().optional()
-}).strict();
-const demoProviderSchema = z.object({
-  providerId: z.string().trim().min(1).max(128),
-  claimant: z.string().trim().min(1).max(256),
-  expectedVersion: z.number().int().positive().optional()
+  expectedVersion: z.number().int().positive()
 }).strict();
 
 export interface ApiOptions {
   webOrigins?: string[];
   demoEnabled?: boolean;
+  demoSessionSecret?: string;
+  secureDemoCookies?: boolean;
   credentials?: Partial<CredentialRegistry>;
 }
 
 export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) {
   const app = express();
-  const origins = options.webOrigins ?? ["http://localhost:5173"];
+  const origins = options.webOrigins ?? [];
   const credentials: CredentialRegistry = {
     issuers: options.credentials?.issuers ?? {},
     providers: options.credentials?.providers ?? {},
@@ -59,43 +51,81 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
   };
 
   app.disable("x-powered-by");
-  app.use((req, res, next) => {
+  app.set("trust proxy", 1);
+  app.use((req: Request, res: Response, next: NextFunction) => {
     const requestId = req.header("x-request-id")?.slice(0, 128) || randomUUID();
     res.locals.requestId = requestId;
     res.setHeader("x-request-id", requestId);
+    res.setHeader("cache-control", "no-store");
     res.setHeader("x-content-type-options", "nosniff");
     res.setHeader("referrer-policy", "no-referrer");
     res.setHeader("x-frame-options", "DENY");
+    res.setHeader("content-security-policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    if (process.env.NODE_ENV === "production") {
+      res.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains");
+    }
     next();
   });
-  app.use(cors({
-    origin(origin, callback) {
-      if (!origin || origins.includes(origin)) return callback(null, true);
-      return callback(new SkillPassError("FORBIDDEN", "origin is not allowed", 403));
-    }
+
+  if (origins.length > 0) {
+    app.use(cors({
+      credentials: true,
+      origin(origin, callback) {
+        if (!origin || origins.includes(origin)) return callback(null, true);
+        return callback(new SkillPassError("FORBIDDEN", "origin is not allowed", 403));
+      }
+    }));
+  }
+
+  app.use(express.json({ limit: "64kb", strict: true }));
+
+  app.get("/", (_req, res) => res.json({
+    name: "SkillPass Care API",
+    version: "0.3.0",
+    health: "/health/ready",
+    demo: options.demoEnabled ? "/demo/state" : null
   }));
-  app.use(express.json({ limit: "64kb" }));
 
   app.get("/health/live", (_req, res) => res.json({ ok: true }));
   app.get("/health/ready", async (_req, res, next) => {
     try {
       const health = await ledger.health();
-      res.status(health.ready ? 200 : 503).json({ ok: health.ready, ledger: health });
+      res.status(health.ready ? 200 : 503).json({ ok: health.ready, ledger: health, demo: Boolean(options.demoEnabled) });
     } catch (err) { next(err); }
   });
   app.get("/health", async (_req, res, next) => {
     try {
       const health = await ledger.health();
-      res.status(health.ready ? 200 : 503).json({ ok: health.ready, ledger: health });
+      res.status(health.ready ? 200 : 503).json({ ok: health.ready, ledger: health, demo: Boolean(options.demoEnabled) });
     } catch (err) { next(err); }
   });
 
-  app.get("/entitlements", async (_req, res, next) => {
-    try { res.json(await ledger.list()); } catch (err) { next(err); }
+  app.get("/meta", async (_req, res, next) => {
+    try {
+      const health = await ledger.health();
+      res.json({
+        name: "SkillPass Care",
+        apiVersion: "0.3.0",
+        demoEnabled: Boolean(options.demoEnabled),
+        ledgerMode: health.mode,
+        ledgerReady: health.ready,
+        ckbImplemented: false
+      });
+    } catch (err) { next(err); }
+  });
+
+  // Production/pilot reads are credential-gated. The browser demo never uses these routes.
+  app.get("/entitlements", async (req, res, next) => {
+    try {
+      authenticateAny(req, ["issuer", "provider", "owner"], credentials);
+      res.json(await ledger.list());
+    } catch (err) { next(err); }
   });
 
   app.get("/entitlements/:id", async (req, res, next) => {
     try {
+      authenticateAny(req, ["issuer", "provider", "owner"], credentials);
       const right = await ledger.get(req.params.id);
       if (!right) throw new SkillPassError("NOT_FOUND", "entitlement not found", 404);
       res.json(right);
@@ -152,43 +182,19 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
   });
 
   if (options.demoEnabled) {
-    app.post("/demo/reset", async (_req, res, next) => {
-      try {
-        if (!ledger.resetDemo) throw new SkillPassError("NOT_IMPLEMENTED", "demo reset unavailable", 503);
-        res.json(await ledger.resetDemo());
-      } catch (err) { next(err); }
-    });
-
-    app.post("/demo/entitlements/:id/transfer", async (req, res, next) => {
-      try {
-        const body = demoActorSchema.parse(req.body);
-        res.json(await ledger.transfer(req.params.id, body.from, body.to, { expectedVersion: body.expectedVersion }));
-      } catch (err) { next(err); }
-    });
-
-    app.post("/demo/entitlements/:id/verify", async (req, res, next) => {
-      try {
-        const body = demoProviderSchema.parse(req.body);
-        const verifier = new ProviderVerifier({ providerId: body.providerId, ledger });
-        res.json(await verifier.verify({ entitlementId: req.params.id, claimant: body.claimant }));
-      } catch (err) { next(err); }
-    });
-
-    app.post("/demo/entitlements/:id/claim", async (req, res, next) => {
-      try {
-        const body = demoProviderSchema.parse(req.body);
-        res.json(await ledger.claim(req.params.id, body.claimant, body.providerId, { expectedVersion: body.expectedVersion }));
-      } catch (err) { next(err); }
-    });
+    app.use("/demo", createDemoRouter({
+      secret: options.demoSessionSecret,
+      secureCookies: options.secureDemoCookies
+    }));
   }
 
-  app.use((_req, res) => {
+  app.use((_req: Request, res: Response) => {
     res.status(404).json({
       error: { code: "NOT_FOUND", message: "route not found", requestId: res.locals.requestId }
     });
   });
 
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof ZodError) {
       return res.status(400).json({
         error: {

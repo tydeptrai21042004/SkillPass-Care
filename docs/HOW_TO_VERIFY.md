@@ -1,93 +1,103 @@
-# How to Verify
+# How to verify the build
 
-## 1. Install
+## Automated checks
 
 ```bash
-cp .env.example .env
 npm install
-```
-
-## 2. Run the complete repository checks
-
-```bash
 npm run check
 ```
 
-The current tests cover:
+The check command runs workspace type checks, tests, package builds, API build, and web build.
 
-- current-owner authorization;
-- stale-owner rejection after transfer;
-- two independent provider IDs following the new owner;
-- provider allow-list enforcement;
-- claim decrement and exhaustion;
-- concurrent attempts against the final claim;
-- optimistic entitlement-version conflicts;
-- owner/provider/issuer credential enforcement;
-- issuer identity binding on creation;
-- suspension and irreversible revocation;
-- stable API error envelopes;
-- complete disabling of demo routes;
-- readiness/liveness separation.
+## Public demo API locally
 
-## 3. Run the browser demo
+Start the project:
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:5173` and follow the numbered lifecycle.
+The browser uses `http://localhost:5173/api/*`, which Vite proxies to the API. For direct API testing, use port `8787`.
 
-## 4. API-only demo verification
+Use a cookie jar because the demo lifecycle is session-scoped:
 
 ```bash
-curl http://localhost:8787/health/ready
-curl -X POST http://localhost:8787/demo/reset
-curl http://localhost:8787/entitlements
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+  http://localhost:8787/demo/state
 ```
 
-Use the returned entitlement ID:
+Reset:
 
 ```bash
-curl -X POST http://localhost:8787/demo/entitlements/ENT_ID/verify \
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
   -H 'content-type: application/json' \
-  -d '{"providerId":"repair-a","claimant":"alice"}'
-
-curl -X POST http://localhost:8787/demo/entitlements/ENT_ID/transfer \
-  -H 'content-type: application/json' \
-  -d '{"from":"alice","to":"bob","expectedVersion":1}'
-
-curl -X POST http://localhost:8787/demo/entitlements/ENT_ID/verify \
-  -H 'content-type: application/json' \
-  -d '{"providerId":"repair-a","claimant":"alice"}'
-
-curl -X POST http://localhost:8787/demo/entitlements/ENT_ID/verify \
-  -H 'content-type: application/json' \
-  -d '{"providerId":"repair-b","claimant":"bob"}'
+  -d '{}' \
+  http://localhost:8787/demo/reset
 ```
 
-Expected sequence: `ALLOW Alice` → transfer → `WRONG_OWNER Alice` → `ALLOW Bob`.
+From the returned JSON, note the entitlement `id` and current `version`.
 
-## 5. Verify authenticated provider identity
-
-With the sample `.env` values:
+Verify Alice:
 
 ```bash
-curl -X POST http://localhost:8787/entitlements/ENT_ID/verify \
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
   -H 'content-type: application/json' \
+  -d '{"providerId":"repair-a","claimant":"alice"}' \
+  http://localhost:8787/demo/entitlements/ENT_ID/verify
+```
+
+Transfer Alice → Bob:
+
+```bash
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+  -H 'content-type: application/json' \
+  -d '{"from":"alice","to":"bob","expectedVersion":1}' \
+  http://localhost:8787/demo/entitlements/ENT_ID/transfer
+```
+
+Verify the previous owner is denied:
+
+```bash
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+  -H 'content-type: application/json' \
+  -d '{"providerId":"repair-a","claimant":"alice"}' \
+  http://localhost:8787/demo/entitlements/ENT_ID/verify
+```
+
+Verify Bob at Provider B:
+
+```bash
+curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+  -H 'content-type: application/json' \
+  -d '{"providerId":"repair-b","claimant":"bob"}' \
+  http://localhost:8787/demo/entitlements/ENT_ID/verify
+```
+
+## Protected-read check
+
+Without credentials this must return `401`:
+
+```bash
+curl -i http://localhost:8787/entitlements
+```
+
+With configured provider credentials it should return the pilot ledger state:
+
+```bash
+curl \
   -H 'x-provider-id: repair-a' \
-  -H 'x-provider-key: change-me-provider-a' \
-  -d '{"claimant":"alice"}'
+  -H 'x-provider-key: local-provider-a-secret' \
+  http://localhost:8787/entitlements
 ```
 
-Omitting or changing the key must return `401`.
+## Vercel post-deploy smoke test
 
-## 6. Verify the CKB fail-closed boundary
+Replace `https://YOUR-PROJECT.vercel.app` below:
 
-Set:
-
-```env
-LEDGER_MODE=ckb
-ENABLE_DEMO_ENDPOINTS=false
+```bash
+curl https://YOUR-PROJECT.vercel.app/api/health/live
+curl https://YOUR-PROJECT.vercel.app/api/health/ready
+curl https://YOUR-PROJECT.vercel.app/api/meta
 ```
 
-`GET /health/live` should remain process-live, while `GET /health/ready` returns `503` until the real Cell protocol implementation exists. This is intentional: the repository does not claim an unfinished adapter is production CKB functionality.
+Then open the deployment in a browser and run all six lifecycle buttons. Reload after transfer and confirm Bob remains the current demo holder for that browser session.

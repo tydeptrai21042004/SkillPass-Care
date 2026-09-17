@@ -1,8 +1,8 @@
 {
   "name": "skillpass-care-pilot",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
-  "description": "Pilot scaffold for portable service coverage on CKB-style live Cell ownership.",
+  "description": "Vercel-ready pilot for portable service coverage on CKB-style live Cell ownership.",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -12,8 +12,9 @@
     "build:packages": "npm run build -w @skillpass/shared && npm run build -w @skillpass/core && npm run build -w @skillpass/ckb-adapter && npm run build -w @skillpass/provider-sdk && npm run build -w @skillpass/config",
     "build:apps": "npm run build -w @skillpass/api && npm run build -w @skillpass/web",
     "build": "npm run build:packages && npm run build:apps",
+    "build:vercel": "npm run build:packages && npm run build -w @skillpass/web",
     "test": "npm run build:packages && npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.vercel.json --noEmit",
     "check": "npm run typecheck && npm test && npm run build:apps"
   },
   "devDependencies": {

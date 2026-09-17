@@ -1,17 +1,19 @@
 import type { AuthorizationDecision, VerificationRequest } from "@skillpass/shared";
 import type { ServiceRight } from "./model.js";
 
-/**
- * Pure authorization policy. Keeping this free of network/storage calls makes
- * provider behavior deterministic and straightforward to test.
- */
+/** Pure authorization policy with no storage/network side effects. */
 export function evaluateAuthorization(
   right: ServiceRight | undefined,
   request: VerificationRequest,
   now = new Date()
 ): AuthorizationDecision {
   if (!right) return { allowed: false, reason: "NOT_FOUND" };
-  if (!right.active) return { allowed: false, reason: "INACTIVE", entitlementVersion: right.version };
+  if (right.status === "SUSPENDED") {
+    return { allowed: false, reason: "SUSPENDED", entitlementVersion: right.version };
+  }
+  if (right.status === "REVOKED") {
+    return { allowed: false, reason: "REVOKED", entitlementVersion: right.version };
+  }
   if (new Date(right.expiresAt).getTime() <= now.getTime()) {
     return { allowed: false, reason: "EXPIRED", entitlementVersion: right.version };
   }

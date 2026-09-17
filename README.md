@@ -1,34 +1,44 @@
 # SkillPass Care Pilot
 
-SkillPass Care is a product-oriented pilot for **portable service coverage that follows ownership**.
+SkillPass Care demonstrates **portable service coverage that follows ownership**. A seller issues a service right for a product, independent providers verify the current owner, and a transfer makes the previous owner ineligible without requiring providers to share a customer-entitlement database.
 
-The project is deliberately structured around a real workflow rather than a generic token-gating demo:
+This repository intentionally separates two things:
 
-1. A seller or service-plan issuer creates a service entitlement for a device/product.
-2. The entitlement has a current owner.
-3. Independent service providers verify the same entitlement without sharing a customer-entitlement database.
-4. When ownership changes, the entitlement can transfer to the new owner.
-5. The old owner is rejected after transfer.
+- **Executable local pilot:** secure-enough-for-local-development identity binding, deterministic state transitions, concurrency/version protection, provider verification evidence, lifecycle tests and a reviewer-friendly UI.
+- **CKB production boundary:** explicit adapter and readiness behavior. CKB mode fails closed until a versioned SkillPass Cell schema and wallet-signed state-transition implementation are deployed. The code never presents an in-memory transfer as an on-chain transfer.
 
-The repository ships with an **in-memory ledger** so the entire lifecycle can be demonstrated locally. The CKB testnet adapter boundary is isolated in `packages/ckb-adapter`; replacing the in-memory adapter with real CCC/CKB calls should not require rewriting the provider SDK or business logic.
+## What changed in v0.2
+
+- Non-demo API routes no longer trust caller-supplied issuer/provider/owner identities.
+- Provider and issuer identities are bound to server-side pilot credentials.
+- Owner transfer on the local ledger is authenticated and supports optimistic version checks.
+- Demo shortcuts are isolated under `/demo/*` and can be disabled completely.
+- Entitlements support `ACTIVE`, `SUSPENDED` and irreversible `REVOKED` states.
+- Stable JSON error envelopes distinguish validation, auth, forbidden, not-found and version-conflict failures.
+- Liveness and readiness are separate.
+- CKB mode probes RPC reachability but remains not-ready until the actual Cell protocol is implemented.
+- Tests now cover provider allow-lists, claim exhaustion, concurrent final claims, stale versions, credentials, suspension/revocation and demo-route disabling.
+- Added `.env.example`, CI and improved product/reviewer UI separation.
 
 ## Repository layout
 
 ```text
 apps/
-  api/                 HTTP API for issuance, transfer, verification and claims
-  web/                 Lightweight pilot UI
+  api/                 HTTP API, authentication boundary and health endpoints
+  web/                 Product + reviewer pilot UI
 packages/
-  core/                Domain models and policy logic
-  shared/              Shared DTOs and utilities
-  ckb-adapter/         Ledger interface, memory implementation, CKB placeholder
-  provider-sdk/        Provider-side independent verification helper
-  config/              Environment parsing
+  core/                Domain model and pure authorization policy
+  shared/              Shared DTOs, error and health types
+  ckb-adapter/         Ledger interface, memory implementation, fail-closed CKB boundary
+  provider-sdk/        Independent provider verification helper + evidence
+  config/              Environment parsing and production safety checks
 
-docs/                  Product, architecture, security, pilot and verification docs
+docs/                  Architecture, API, security, pilot and verification docs
 ```
 
 ## Quick start
+
+Requirements: Node.js 20+ and npm 10+.
 
 ```bash
 cp .env.example .env
@@ -36,36 +46,45 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:5173`.
+Open `http://localhost:5173`. The API defaults to `http://localhost:8787`.
 
-The API runs at `http://localhost:8787`.
+If you do not have a lockfile yet after modifying dependencies, run `npm install` once and commit the resulting `package-lock.json`.
 
-## Demo lifecycle
-
-The UI can exercise:
+## Local demo lifecycle
 
 ```text
-Issue pass to Alice
+Reset pass to Alice
       ↓
 Provider A verifies Alice → ALLOW
       ↓
-Transfer Alice → Bob
+Transfer Alice → Bob (version checked)
       ↓
 Provider A verifies Alice → DENY
 Provider B verifies Bob   → ALLOW
       ↓
-Record a service claim
+Provider B records service → remaining claim count decreases
 ```
 
-## Important implementation note
+The browser uses only `/demo/*` routes. Those routes are for demonstrations and user interviews, not deployment.
 
-This is a **pilot scaffold**, not a claim that the current ledger code is production CKB code. The memory ledger enforces the same domain invariants expected from a live-Cell implementation, while `CkbLedgerAdapter` documents the methods that must be backed by CCC/CKB RPC/indexer calls.
+## Authenticated pilot API
 
-See:
+Non-demo write/verification routes bind identity to configured credentials:
 
-- `docs/ARCHITECTURE.md`
-- `docs/PILOT_PLAN.md`
-- `docs/PROVIDER_INTEGRATION.md`
-- `docs/HOW_TO_VERIFY.md`
-- `docs/SECURITY.md`
-- `docs/ROADMAP.md`
+- issuer: `x-issuer-id` + `x-issuer-key`
+- provider: `x-provider-id` + `x-provider-key`
+- owner: `x-owner-id` + `x-owner-key`
+
+These shared secrets are a **pilot boundary**, not the final CKB wallet-auth mechanism. In CKB mode, ownership transitions must be wallet-signed transactions that consume the current live Cell and create the successor Cell.
+
+## Verify the repository
+
+```bash
+npm run typecheck
+npm test
+npm run build
+# or all three
+npm run check
+```
+
+See `docs/HOW_TO_VERIFY.md` for exact API examples and `docs/SECURITY.md` for what is and is not secured by this pilot.

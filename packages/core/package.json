@@ -1,11 +1,19 @@
 {
   "name": "@skillpass/core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {"build":"tsc -p tsconfig.json","typecheck":"tsc -p tsconfig.json --noEmit","test":"vitest run"},
-  "dependencies":{"@skillpass/shared":"*"},
-  "devDependencies":{"vitest":"^2.1.4"}
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@skillpass/shared": "*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.4"
+  }
 }

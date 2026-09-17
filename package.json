@@ -1,19 +1,28 @@
 {
   "name": "skillpass-care-pilot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Pilot scaffold for portable service coverage on CKB-style live Cell ownership.",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web \"npm run dev -w @skillpass/api\" \"npm run dev -w @skillpass/web\"",
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "build:packages": "npm run build -w @skillpass/shared && npm run build -w @skillpass/core && npm run build -w @skillpass/ckb-adapter && npm run build -w @skillpass/provider-sdk && npm run build -w @skillpass/config",
+    "build:apps": "npm run build -w @skillpass/api && npm run build -w @skillpass/web",
+    "build": "npm run build:packages && npm run build:apps",
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "check": "npm run typecheck && npm test && npm run build:apps"
   },
   "devDependencies": {
     "concurrently": "^9.0.1",
     "typescript": "^5.6.3"
   },
-  "engines": {"node": ">=20"}
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "packageManager": "npm@10.9.0",
+  "type": "module"
 }

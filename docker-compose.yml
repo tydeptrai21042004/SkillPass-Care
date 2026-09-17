@@ -4,8 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
+      NODE_ENV: development
       PORT: 8787
-      WEB_ORIGIN: http://localhost:5173
+      WEB_ORIGINS: http://localhost:5173
       LEDGER_MODE: memory
+      ENABLE_DEMO_ENDPOINTS: "true"
+      ISSUER_KEYS: seller-demo:local-issuer-secret
+      PROVIDER_KEYS: repair-a:local-provider-a-secret,repair-b:local-provider-b-secret
+      OWNER_KEYS: alice:local-alice-secret,bob:local-bob-secret,carol:local-carol-secret
     ports:
       - "8787:8787"

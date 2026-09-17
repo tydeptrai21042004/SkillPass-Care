@@ -1,10 +1,10 @@
-import type { EntitlementId, Principal, ProviderId } from "@skillpass/shared";
+import type { EntitlementId, EntitlementStatus, Principal, ProviderId } from "@skillpass/shared";
 
 /**
- * Domain representation of a portable service right.
+ * Domain representation used by the pilot.
  *
- * IMPORTANT: `owner` is demo-domain state. In the production CKB adapter,
- * ownership must be derived from the lock script of the canonical live Cell.
+ * In a CKB implementation, `owner` MUST be derived from the lock script of the
+ * canonical live Cell rather than trusted from serialized Cell data.
  */
 export interface ServiceRight {
   id: EntitlementId;
@@ -16,7 +16,7 @@ export interface ServiceRight {
   expiresAt: string;
   transferable: boolean;
   acceptedProviderIds: ProviderId[];
-  active: boolean;
+  status: EntitlementStatus;
   version: number;
   createdAt: string;
   updatedAt: string;

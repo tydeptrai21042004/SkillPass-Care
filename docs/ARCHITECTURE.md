@@ -1,82 +1,70 @@
 # Architecture
 
-## Goal
+## Core invariant
 
-SkillPass Care separates four concerns:
-
-```text
-Product owner / wallet
-        │
-        ▼
-Service entitlement state
-        │
-        ├──────────────► Provider A verifier
-        ├──────────────► Provider B verifier
-        └──────────────► Provider C verifier
-```
-
-Providers do not need a shared entitlement database. Each provider asks the same ledger adapter for the current live entitlement state and independently applies its acceptance policy.
-
-## Domain model
-
-A `ServiceRight` contains:
-
-- `id`: stable entitlement identifier.
-- `issuerId`: seller/issuer identity.
-- `productHash`: privacy-preserving binding to the covered product.
-- `owner`: current wallet/principal.
-- `serviceClass`: human/business label such as `STANDARD_90D`.
-- `remainingClaims`: remaining service events.
-- `expiresAt`: expiration timestamp.
-- `transferable`: whether owner transfer is allowed.
-- `acceptedProviderIds`: explicit providers recognized by this pilot plan.
-- `version`: monotonically increasing revision number.
-
-The pilot intentionally keeps personally identifying customer information off ledger.
-
-## Authorization invariant
-
-For a provider `p`, user `u` and entitlement `e`, authorization succeeds only when:
+For provider `p`, claimant `u` and entitlement `e`, authorization succeeds only when:
 
 ```text
 entitlement exists
-AND entitlement is active
-AND entitlement.owner == u
+AND status == ACTIVE
+AND not expired
+AND current owner == u
 AND p is accepted by entitlement policy
 AND remainingClaims > 0
 ```
 
-A transfer creates a new entitlement state/version. Providers always resolve the latest live state through the ledger adapter.
+After a transfer, all providers that resolve current state must reject the previous owner and accept the new owner when all other policy conditions hold.
 
-## Package boundaries
-
-### `packages/core`
-Pure TypeScript domain logic. It knows nothing about Express, React, CKB RPCs or databases.
-
-### `packages/ckb-adapter`
-Defines the storage/ledger interface. The in-memory adapter is executable. The CKB adapter is a documented production boundary.
-
-### `packages/provider-sdk`
-What an independent provider would integrate. A provider needs a ledger adapter plus its own provider ID; it does not need the issuer's customer database.
-
-### `apps/api`
-Coordinates application use-cases. The API is intentionally thin so business rules remain testable in `core`.
-
-### `apps/web`
-Pilot UI for demos/interviews. It should remain understandable by a non-blockchain user.
-
-## Production evolution
-
-The intended production/testnet mapping is:
+## Trust boundaries
 
 ```text
-ServiceRight.id          -> stable type-script/entitlement identifier
-ServiceRight.owner       -> lock-script owner of current live Cell
-ServiceRight.version     -> sequence / creation order / immutable cell transition
-issue()                  -> build + sign + send creation transaction
-transfer()               -> consume current Cell, create new owner Cell
-findById()               -> locate canonical live Cell via indexer/RPC
-claim()                  -> policy-dependent state transition or off-chain audit record
+Issuer backend ── authenticated issuer identity ──┐
+                                                  │
+Owner/client ─── authenticated pilot owner ───────┼── API ── Ledger
+                                                  │
+Provider A ───── authenticated provider A ─────────┤
+Provider B ───── authenticated provider B ─────────┘
 ```
 
-No caller should depend on the in-memory representation itself.
+The browser demonstration is separate and uses only `/demo/*` routes. Those routes intentionally simulate actors and are not a security boundary.
+
+## Domain model
+
+A `ServiceRight` contains a stable pilot ID, issuer, privacy-preserving product commitment, current owner principal, service class, remaining claim count, expiry, transfer flag, accepted providers, status and monotonically increasing version.
+
+In the memory pilot, `owner` is stored directly. In a CKB implementation it must be **derived from the lock script of the canonical live Cell** and should not be duplicated as authoritative Cell data.
+
+## Optimistic mutation rule
+
+State-changing operations may provide `expectedVersion`:
+
+```text
+client observed version N
+        ↓
+mutation requires version N
+        ↓
+ledger is still N → commit N+1
+ledger already changed → 409 conflict
+```
+
+This protects the pilot from silent lost updates. Real CKB atomicity ultimately comes from Cell consumption, not from a JavaScript version field.
+
+## Provider independence
+
+`packages/provider-sdk` takes a fixed provider identity plus a ledger resolver. It resolves the entitlement before each decision and returns evidence containing the provider, claimant, version and verification time.
+
+For a stronger decentralization demonstration, deploy Provider A and Provider B as separate backend processes that each resolve the same CKB state rather than routing both through one central API.
+
+## CKB production mapping
+
+```text
+ServiceRight.id      -> stable type-script / entitlement identity
+owner                -> current live Cell lock script
+state/policy         -> versioned Cell data and/or committed policy hash
+issue                -> wallet/issuer signed creation transaction
+transfer             -> consume current Cell + create successor owned by recipient
+get                   -> resolve exactly one canonical live Cell
+claim                 -> explicitly defined atomic on-chain transition OR durable off-chain receipt model
+```
+
+The current `CkbLedgerAdapter` deliberately does not invent these operations. It exposes RPC health for diagnostics and returns not-ready until the protocol details are actually implemented.

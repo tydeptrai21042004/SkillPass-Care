@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateAuthorization, type ServiceRight } from "../src/index.js";
 
-const right: ServiceRight = {
+const base: ServiceRight = {
   id: "ent-1",
   issuerId: "seller",
   productHash: "sha256:demo",
@@ -11,26 +11,28 @@ const right: ServiceRight = {
   expiresAt: "2099-01-01T00:00:00.000Z",
   transferable: true,
   acceptedProviderIds: ["repair-a", "repair-b"],
-  active: true,
+  status: "ACTIVE",
   version: 1,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z"
 };
 
+const request = { entitlementId: base.id, providerId: "repair-a", claimant: "alice" };
+
 describe("evaluateAuthorization", () => {
   it("allows the current owner at an accepted provider", () => {
-    expect(evaluateAuthorization(right, {
-      entitlementId: right.id,
-      providerId: "repair-a",
-      claimant: "alice"
-    }).allowed).toBe(true);
+    expect(evaluateAuthorization(base, request).reason).toBe("ALLOW");
   });
 
-  it("rejects a stale owner", () => {
-    expect(evaluateAuthorization({ ...right, owner: "bob", version: 2 }, {
-      entitlementId: right.id,
-      providerId: "repair-a",
-      claimant: "alice"
-    }).reason).toBe("WRONG_OWNER");
+  it.each([
+    [undefined, "NOT_FOUND"],
+    [{ ...base, status: "SUSPENDED" as const }, "SUSPENDED"],
+    [{ ...base, status: "REVOKED" as const }, "REVOKED"],
+    [{ ...base, expiresAt: "2020-01-01T00:00:00.000Z" }, "EXPIRED"],
+    [{ ...base, owner: "bob" }, "WRONG_OWNER"],
+    [{ ...base, acceptedProviderIds: ["repair-b"] }, "PROVIDER_NOT_ACCEPTED"],
+    [{ ...base, remainingClaims: 0 }, "NO_CLAIMS_LEFT"]
+  ])("rejects invalid state with %s", (right, reason) => {
+    expect(evaluateAuthorization(right as ServiceRight | undefined, request).reason).toBe(reason);
   });
 });

@@ -1,10 +1,11 @@
 FROM node:20-alpine
 WORKDIR /app
-COPY package*.json ./
+COPY package.json ./
 COPY apps ./apps
 COPY packages ./packages
 COPY tsconfig.base.json ./
 RUN npm install
-RUN npm run build -w @skillpass/api
+RUN npm run build
+ENV NODE_ENV=production
 EXPOSE 8787
 CMD ["npm","run","start","-w","@skillpass/api"]

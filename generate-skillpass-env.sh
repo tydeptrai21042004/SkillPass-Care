@@ -99,6 +99,8 @@ cat > "$OUTPUT" <<EOF
 # ============================================================
 
 # Runtime
+# Keep production semantics at runtime. Vercel installation is configured
+# separately to include TypeScript/build-time devDependencies.
 NODE_ENV=production
 PORT=8787
 

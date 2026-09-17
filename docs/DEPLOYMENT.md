@@ -17,6 +17,14 @@ Output directory: apps/web/dist
 
 These are already specified in `vercel.json`.
 
+The repository intentionally keeps `NODE_ENV=production` for deployed runtime security, while the Vercel install command uses `npm install --production=false` so build-time tools such as TypeScript are still installed. The root `.npmrc` also sets `include=dev` as a defensive fallback.
+
+If a build fails with `tsc: command not found`, verify that Vercel is using the repository-root `vercel.json` and that the Install Command has not been overridden in the dashboard. The expected command is:
+
+```text
+npm install --production=false --no-audit --no-fund
+```
+
 ### 2. Add environment variables
 
 Recommended for the public demo:

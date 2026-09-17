@@ -51,5 +51,5 @@
     }
   ],
   "framework": null,
-  "installCommand": "npm install --no-audit --no-fund"
+  "installCommand": "npm install --production=false --no-audit --no-fund"
 }

@@ -1,83 +1,36 @@
 # Security Notes
 
-## Security boundaries in this version
+## Implemented controls
 
-SkillPass Care separates:
+- Issuer, provider and transfer-source identity are derived from authenticated credentials, not request JSON.
+- Provider verification/claim requires owner proof bound to entitlement, provider, claimant, action and expiration.
+- Claim challenges additionally bind `serviceEventId`.
+- The latest entitlement is resolved after owner proof validation; stale pre-transfer proof cannot restore old-owner eligibility.
+- Mutations require `expectedVersion` in the off-chain pilot.
+- Claim retries are idempotent and reject event-ID/request-hash mismatch.
+- List/detail reads are actor-scoped.
+- Revocation is irreversible.
+- Demo state is signed, HttpOnly and non-authoritative.
+- Production demo mode requires a strong `DEMO_SESSION_SECRET`.
+- Production pilot mode requires complete actor credentials, a strong `OWNER_PROOF_CHALLENGE_SECRET`, and minimum credential-secret length.
+- API responses use request IDs, `no-store`, strict JSON size/shape validation and defensive headers.
+- CKB state operations fail closed rather than silently falling back to memory.
 
-- **public demo routes** under `/demo/*`, which simulate actors and keep non-authoritative state in a signed browser cookie;
-- **authenticated pilot routes**, which bind issuer/provider/owner identity to server-configured credentials;
-- **CKB mode**, which remains fail-closed until real live-Cell state transitions exist.
+## Pilot cryptography limitation
 
-The public demo can be deployed in production because it is isolated and explicitly non-authoritative. It is not a substitute for wallet proof or durable ledger state.
+`HMAC-SHA256-PILOT` owner proof and provider evidence are intentionally named as pilot mechanisms. The server shares the underlying secrets, so they are not equivalent to independently verifiable asymmetric signatures.
 
-## Controls implemented
+The production target is:
 
-### Stale-owner access
-Providers resolve the current entitlement before every decision. After transfer, old-holder verification fails.
+```text
+owner proof      = wallet signature by current Cell-lock controller
+provider evidence = asymmetric provider signature / key rotation metadata
+```
 
-### Caller-selected provider/issuer/transfer identity
-Authenticated routes derive provider, issuer and transfer-source owner from credentials. Caller JSON cannot override those identities.
+## Remaining high-priority risks
 
-### Protected reads
-Entitlement list/detail endpoints require a valid configured actor credential and are no longer anonymously readable.
-
-### Lost update / stale mutation
-Authenticated transfer, claim and status routes require `expectedVersion`. A stale version returns `409 VERSION_CONFLICT` rather than silently overwriting newer state.
-
-### Shared transition semantics
-The memory ledger and browser-session demo both use the pure transition functions in `packages/core`, reducing semantic drift between demonstration and API behavior.
-
-### Demo session integrity
-Demo state is HMAC-signed and stored in an `HttpOnly`, `SameSite=Lax` cookie. A deployment-specific `DEMO_SESSION_SECRET` is strongly recommended. The cookie contains no production credentials and is not considered authoritative ownership evidence.
-
-### Lifecycle invalidation
-Suspended and revoked passes fail authorization. Revocation is irreversible in the memory pilot.
-
-### Error handling
-Known errors use stable public codes. Unexpected exceptions are logged with a request ID and return a generic `500` response.
-
-### HTTP hardening
-The API:
-
-- disables `x-powered-by`;
-- limits JSON request bodies to 64 KiB;
-- emits no-store headers for API responses;
-- adds CSP/frame/sniff/referrer/permissions headers;
-- emits HSTS in production;
-- applies CORS only when an explicit allow-list is configured.
-
-The Vercel static deployment adds corresponding frontend security headers and immutable caching for hashed assets.
-
-## Serverless limitation
-
-`InMemoryLedger` is process-local. It is **not** durable across Vercel function instances and must not back real customer rights on a horizontally scaled deployment. The public demo avoids this issue by carrying demo state in the signed browser session.
-
-A real off-chain production pilot needs a durable datastore-backed `ServiceRightLedger`; the intended chain-backed production path needs the CKB adapter described below.
-
-## CKB boundary
-
-`LEDGER_MODE=ckb` can probe RPC reachability for diagnostics, but readiness remains false and state methods return `503 NOT_IMPLEMENTED` until the project has:
-
-1. a versioned SkillPass Cell data schema;
-2. stable entitlement identity/type-script strategy;
-3. ownership derived from the canonical live Cell lock script;
-4. wallet-signed issue/transfer transaction construction;
-5. canonical live-Cell resolution and confirmation/reorg policy;
-6. durable claim semantics under independent concurrent providers;
-7. issuer/provider trust material with rotation/revocation rules.
-
-The application must never mutate an off-chain `owner` field and describe that operation as a CKB transfer.
-
-## Before value-bearing usage
-
-- Replace owner shared secrets with wallet-signed transactions/intents.
-- Define issuer keys and rotation/revocation procedures.
-- Sign provider manifests and bind provider policy versions.
-- Add nonce + expiry + payload-hash replay protection for any signed off-chain actions.
-- Define confirmation/reorg behavior.
-- Store durable authorization/claim audit evidence.
-- Add a durable datastore for any remaining off-chain mutable state.
-- Add distributed rate limiting for auth and mutation endpoints.
-- Keep secrets only in the deployment secret manager.
-- Run dependency, secret and SAST scanning in CI.
-- Obtain an external security review before mainnet or valuable rights.
+1. Memory state is process-local and not durable under horizontal/serverless scaling.
+2. Challenge replay for read-only verification is possible within the short TTL; this is acceptable for a non-mutating decision. Claims are protected by service-event idempotency.
+3. Static shared secrets need rotation and eventually replacement by stronger provider/issuer authentication.
+4. CKB canonical live-Cell uniqueness, confirmation depth and reorg handling are not yet implemented.
+5. Physical product possession is outside the cryptographic trust boundary unless the product itself is represented on-chain.

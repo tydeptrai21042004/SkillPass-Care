@@ -9,6 +9,8 @@ const schema = z.object({
   LEDGER_MODE: z.enum(["memory", "ckb"]).default("memory"),
   ENABLE_DEMO_ENDPOINTS: bool.default("true"),
   DEMO_SESSION_SECRET: z.string().default(""),
+  OWNER_PROOF_CHALLENGE_SECRET: z.string().default(""),
+  OWNER_PROOF_TTL_SECONDS: z.coerce.number().int().min(30).max(600).default(120),
   ISSUER_KEYS: z.string().default(""),
   PROVIDER_KEYS: z.string().default(""),
   OWNER_KEYS: z.string().default(""),
@@ -23,6 +25,8 @@ export interface AppConfig {
   LEDGER_MODE: "memory" | "ckb";
   ENABLE_DEMO_ENDPOINTS: boolean;
   DEMO_SESSION_SECRET: string;
+  OWNER_PROOF_CHALLENGE_SECRET: string;
+  OWNER_PROOF_TTL_SECONDS: number;
   ISSUER_KEYS: Record<string, string>;
   PROVIDER_KEYS: Record<string, string>;
   OWNER_KEYS: Record<string, string>;
@@ -40,13 +44,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     OWNER_KEYS: parseKeyMap(parsed.OWNER_KEYS, "OWNER_KEYS")
   };
 
-  // Public demo mode is safe to deploy without actor secrets because /demo is explicitly
-  // non-authoritative and stores state in a signed browser session. Authenticated routes
-  // remain closed when no credentials are configured.
-  if (config.NODE_ENV === "production" && !config.ENABLE_DEMO_ENDPOINTS && config.LEDGER_MODE === "memory") {
-    if (Object.keys(config.ISSUER_KEYS).length === 0) throw new Error("ISSUER_KEYS is required for production pilot mode");
-    if (Object.keys(config.PROVIDER_KEYS).length === 0) throw new Error("PROVIDER_KEYS is required for production pilot mode");
-    if (Object.keys(config.OWNER_KEYS).length === 0) throw new Error("OWNER_KEYS is required for production pilot mode");
+  if (config.NODE_ENV === "production") {
+    if (config.ENABLE_DEMO_ENDPOINTS && config.DEMO_SESSION_SECRET.trim().length < 32) {
+      throw new Error("DEMO_SESSION_SECRET must be at least 32 characters when the production demo is enabled");
+    }
+
+    const pilotConfigured = Object.keys(config.ISSUER_KEYS).length > 0
+      || Object.keys(config.PROVIDER_KEYS).length > 0
+      || Object.keys(config.OWNER_KEYS).length > 0
+      || !config.ENABLE_DEMO_ENDPOINTS;
+
+    if (pilotConfigured) {
+      if (Object.keys(config.ISSUER_KEYS).length === 0) throw new Error("ISSUER_KEYS is required for production pilot mode");
+      if (Object.keys(config.PROVIDER_KEYS).length === 0) throw new Error("PROVIDER_KEYS is required for production pilot mode");
+      if (Object.keys(config.OWNER_KEYS).length === 0) throw new Error("OWNER_KEYS is required for production pilot mode");
+      if (config.OWNER_PROOF_CHALLENGE_SECRET.trim().length < 32) {
+        throw new Error("OWNER_PROOF_CHALLENGE_SECRET must be at least 32 characters for production pilot mode");
+      }
+      validateSecretStrength(config.ISSUER_KEYS, "ISSUER_KEYS");
+      validateSecretStrength(config.PROVIDER_KEYS, "PROVIDER_KEYS");
+      validateSecretStrength(config.OWNER_KEYS, "OWNER_KEYS");
+    }
   }
   return config;
 }
@@ -64,4 +82,10 @@ function parseKeyMap(value: string, name: string): Record<string, string> {
     out[id] = secret;
   }
   return out;
+}
+
+function validateSecretStrength(values: Record<string, string>, name: string): void {
+  for (const [id, secret] of Object.entries(values)) {
+    if (secret.length < 16) throw new Error(`${name} secret for ${id} must be at least 16 characters in production`);
+  }
 }

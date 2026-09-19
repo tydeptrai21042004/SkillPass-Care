@@ -1,9 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { getRuntimeApp } from "../apps/api/src/runtime.js";
 
-const app = getRuntimeApp();
 const INTERNAL_PATH_PARAM = "__skillpass_path";
-
 type VercelRequest = IncomingMessage & { url?: string };
 
 export function toExpressUrl(requestUrl: string | undefined): string {
@@ -15,11 +13,8 @@ export function toExpressUrl(requestUrl: string | undefined): string {
     .split("/")
     .filter(Boolean)
     .map((segment) => {
-      try {
-        return encodeURIComponent(decodeURIComponent(segment));
-      } catch {
-        return encodeURIComponent(segment);
-      }
+      try { return encodeURIComponent(decodeURIComponent(segment)); }
+      catch { return encodeURIComponent(segment); }
     })
     .join("/");
 
@@ -29,5 +24,5 @@ export function toExpressUrl(requestUrl: string | undefined): string {
 
 export default function handler(req: VercelRequest, res: ServerResponse) {
   req.url = toExpressUrl(req.url);
-  return app(req as any, res as any);
+  return getRuntimeApp()(req as any, res as any);
 }

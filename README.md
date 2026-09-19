@@ -1,62 +1,75 @@
 # SkillPass Care
 
-SkillPass Care demonstrates **portable service coverage that follows product ownership**. A seller issues a service right for a product, independent service providers verify the current holder, and a transfer makes the previous holder ineligible without requiring every provider to share one customer-entitlement database.
+SkillPass Care is a prototype for **portable service rights for second-hand products**. A seller issues a service entitlement, the current entitlement owner can transfer it to a buyer, and accepted providers independently verify the latest entitlement state before providing service.
 
-## Current scope
+> Important: the software enforces transfer of the **service entitlement**. For ordinary physical products it cannot independently prove that the physical item changed hands. A pilot should transfer the service right as part of the sale flow. A future CKB-native product asset could make product + service-right transfer atomic.
 
-This repository deliberately separates three concerns:
+## v0.4 security/protocol hardening
 
-1. **Public Vercel demo** — deterministic Alice → Bob lifecycle using a signed, HttpOnly browser-session cookie. It is designed for serverless deployment and does not depend on process memory.
-2. **Authenticated pilot API** — issuer/provider/owner identities are bound to server-side credentials; optimistic version checks are required for mutations. The memory ledger is intended for local or single-process pilots only.
-3. **CKB boundary** — the adapter probes CKB RPC health but fails closed for reads/writes until the SkillPass Cell schema, canonical live-Cell resolution, and wallet-signed state transitions are implemented.
+- Provider verification no longer trusts a caller-supplied `claimant` string by itself.
+- Provider creates a short-lived, request-bound owner challenge.
+- The owner proves possession in the pilot with `HMAC-SHA256-PILOT`; a CKB wallet signature replaces this later.
+- Challenges bind entitlement, provider, claimant, action and (for claims) `serviceEventId`.
+- Claims are idempotent by `providerId + serviceEventId` and bind the idempotency key to the original request hash.
+- Entitlement reads are actor-scoped: issuers see what they issued, owners see what they own, providers see rights that accept them.
+- Provider verification evidence includes request hash, entitlement version/state reference, expiry and a clearly labeled pilot HMAC signature.
+- `schemaVersion` is distinct from mutable state `version`.
+- A canonical CKB V1 data model is defined; owner is intentionally excluded from Cell data because CKB ownership must come from the live Cell lock.
+- CKB mutation/read operations still fail closed until the real type script, indexer resolution and wallet transaction flow exist.
+- Production demo sessions require a strong secret; production pilot mode additionally requires a strong owner-challenge secret and complete actor credentials.
+- Conflicting legacy Vercel entrypoints were removed. `api/router.ts` is the only serverless entrypoint.
 
-The UI never labels the public demo or the memory ledger as an on-chain transfer.
+## Runtime boundaries
 
-## What v0.3 improves
+```text
+Public browser demo
+  └─ signed HttpOnly browser-session state
+     └─ non-authoritative Alice → Bob showcase
 
-- Vercel-ready same-origin `/api/*` deployment with a root `vercel.json`.
-- Stateless public demo sessions, avoiding unreliable cross-instance in-memory state on serverless infrastructure.
-- Protected entitlement list/detail routes instead of public reads.
-- Required `expectedVersion` on authenticated transfer/claim/status mutations.
-- Shared pure transition functions used by both the memory ledger and demo session.
-- Security headers, request IDs, API no-store policy, strict JSON body limits, safer auth errors, and optional explicit CORS allow-list.
-- Polished product/reviewer UI, responsive layout, loading/error states, clearer lifecycle controls, and explicit CKB honesty boundary.
-- Vite `/api` proxy for local same-origin behavior.
-- Vercel build script, `.env.example`, `.gitignore`, CI workflow, and deployment checklist.
+Authenticated pilot API
+  ├─ issuer credentials
+  ├─ provider credentials
+  ├─ owner proof challenge / proof-of-possession
+  └─ ServiceRightLedger
+       └─ InMemoryLedger (local / controlled single-process pilot only)
+
+CKB boundary
+  ├─ RPC health probe
+  ├─ versioned V1 Cell-data model
+  └─ reads/writes fail closed until canonical live-Cell implementation exists
+```
+
+The UI never presents the public demo or memory ledger as an on-chain transfer.
 
 ## Repository layout
 
 ```text
-api/
-  [...path].ts          Vercel serverless entrypoint
-apps/
-  api/                  Express API, demo session, auth boundary, runtime
-  web/                  Vite + React product/reviewer UI
-packages/
-  core/                 Domain model, authorization and pure transitions
-  shared/               Shared DTOs/errors
-  ckb-adapter/           Memory ledger + fail-closed CKB boundary
-  provider-sdk/          Provider verification helper
-  config/                Runtime environment parsing
-
-docs/                    Architecture, security and deployment notes
+api/router.ts                    Vercel API entrypoint
+apps/api/                        HTTP/auth/challenge/runtime boundary
+apps/web/                        public product/reviewer demo
+packages/core/                   domain model, authorization, transitions
+packages/shared/                 DTOs/errors/proof/evidence types
+packages/ckb-adapter/            memory ledger + CKB boundary + V1 Cell schema
+packages/provider-sdk/           provider verifier + signed pilot evidence
+packages/config/                 environment validation
+docs/                            protocol, security, deployment and pilot notes
 ```
 
 ## Local development
 
-Requirements: Node.js 20+ and npm 10+.
+Requirements: Node.js 22 and npm 10.
 
 ```bash
 cp .env.example .env
-npm install
+npm install --no-audit --no-fund
+npm run check
 npm run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api/*` to the local API on port `8787`, so the browser behaves like the Vercel same-origin deployment.
+Open `http://localhost:5173`. Vite proxies `/api/*` to the local API on port `8787`.
 
-Run verification with:
+## Production caveats
 
-```bash
-npm run check
-```
+The memory ledger is not durable across horizontally scaled/serverless instances. Do not use it as production entitlement storage. The next protocol milestone is canonical CKB live-Cell resolution and wallet-signed transitions; until then CKB mode deliberately returns `NOT_IMPLEMENTED` for state operations.
 
+The repository pins direct dependency versions, but this archive does not contain a fabricated lockfile because registry access was unavailable while preparing it. Generate and commit `package-lock.json` from a networked environment before a production release.

@@ -1,49 +1,48 @@
-# Correction Summary — v0.3.0
+# Correction Summary — v0.4.0
 
-## Vercel deployment
+## Protocol/security
 
-- Added root `vercel.json` for a Vite static frontend plus Node API functions.
-- Added `/api/[...path].ts` and `/api/index.ts` Vercel entrypoints.
-- Added `npm run build:vercel` and same-origin Vite `/api` proxy behavior.
-- Public demo state no longer depends on function/process memory; it uses a signed, HttpOnly browser-session cookie.
-- Added production/static security headers and immutable asset caching.
-- Added a Vercel deployment guide and post-deploy smoke-test instructions.
+- Added request-bound owner proof-of-possession for authenticated provider verification and claims.
+- Added stateless signed challenge tokens with short TTL and domain-separated canonical messages.
+- Bound claim challenges to a provider-generated `serviceEventId`.
+- Added replay-safe claim idempotency keyed by provider + service event and bound to request hash.
+- Added signed pilot authorization evidence with request hash, state reference, expiry and explicit `HMAC-SHA256-PILOT` labeling.
+- Scoped list/detail reads by issuer, owner or accepted provider.
+- Production validation now requires strong demo/challenge secrets and complete pilot credentials when applicable.
+- Malformed JSON now returns a stable `400 VALIDATION_ERROR` instead of falling through to 500.
 
-## API and security
+## Domain/CKB boundary
 
-- Protected entitlement list/detail routes with actor authentication.
-- Required `expectedVersion` on authenticated transfer, claim and status mutations.
-- Improved authentication failure messages to avoid credential-detail leakage.
-- Added API metadata route, no-store responses, HSTS in production, CSP/permissions headers, request IDs and optional explicit CORS.
-- Added demo-session integrity validation and session-isolation tests.
+- Renamed `productHash` to `productCommitment` while retaining a temporary HTTP compatibility alias.
+- Added `schemaVersion` independently from mutable state `version`.
+- Added strict deterministic V1 prototype CKB Cell-data encoding/validation.
+- Added fail-closed canonical live-Cell uniqueness checking.
+- Intentionally excluded `owner` from Cell data; the target authoritative owner is the live Cell lock.
+- Kept CKB reads/writes fail closed until the real protocol is deployed.
 
-## Domain consistency
+## Repository/deployment
 
-- Added shared pure transition functions for transfer, claim and status changes.
-- Reused the same transition semantics in the memory ledger and public demo.
-- Preserved the fail-closed CKB adapter and explicit non-on-chain demo wording.
+- Removed conflicting `api/index.ts` and `api/[...path].ts`; `api/router.ts` is now the only Vercel function entrypoint.
+- Made the router runtime lazy so URL conversion can be imported/tested without loading production configuration.
+- Added `.env.example`, `.gitignore` and GitHub Actions CI.
+- Removed hardcoded demo/memory deployment mode from `vercel.json`; deployment mode is environment-controlled.
+- Exact-pinned direct dependency versions.
+- Updated environment generator for the owner-proof challenge secret.
+- Updated architecture, API, threat-model, deployment, provider and product documentation; added dedicated owner-proof and CKB-schema docs.
 
-## Product UI
+## Test expansion
 
-- Reworked the frontend into a polished product/reviewer experience.
-- Added responsive lifecycle visualization, current-holder state, provider acceptance, progress cues, API status, evidence log, loading/error states and reviewer readiness details.
-- Made the CKB implementation boundary visible instead of implying unsupported chain functionality.
+- claimant proof requirement and invalid proof;
+- challenge binding across providers;
+- proof created before transfer still follows latest owner state;
+- actor-scoped reads;
+- claim idempotency and idempotency conflict;
+- provider evidence signature verification;
+- deterministic CKB data encoding with owner exclusion;
+- production configuration hardening;
+- malformed JSON handling;
+- direct owner-proof token/proof expiry, tampering and stable claim-hash semantics.
 
-## Repository quality
+## Validation environment note
 
-- Added `.env.example`, `.gitignore`, GitHub Actions CI and Vercel-specific TypeScript configuration.
-- Updated API, architecture, security, deployment and verification documentation.
-- Bumped workspace package versions to `0.3.0`.
-
-## Validation performed here
-
-- Parsed all JSON manifests successfully.
-- Verified all relative source imports resolve to files.
-- Type-checked the core/shared/ledger/provider sources.
-- Type-checked web source and API source using local dependency type stubs because registry access was unavailable.
-- Parsed CSS with no stylesheet parse errors and verified the HTML entry structure.
-- Executed a compiled core lifecycle runtime check: Alice allowed → transfer to Bob → Alice denied → Bob claim decrements visits and advances version.
-
-## Environment limitation
-
-The execution environment could not reach the npm registry, so a real `npm install`, Vitest run, Vite production build, or Vercel CLI deployment could not be executed here. I did not fabricate a lockfile or claim those dependency-backed checks passed. Run `npm install && npm run check` once in a networked environment before merging/deploying.
+Dependency installation from the npm registry timed out in this environment, so this file does not claim that Vitest/Vite dependency-backed checks passed here. No lockfile was fabricated. Run `npm install && npm run check` in a networked environment before merge/deploy and commit the resulting `package-lock.json`.

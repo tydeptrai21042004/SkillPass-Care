@@ -4,13 +4,13 @@ set -euo pipefail
 # SkillPass Care environment/key generator
 #
 # Usage:
-#   chmod +x generate-env.sh
-#   ./generate-env.sh
+#   chmod +x generate-skillpass-env.sh
+#   ./generate-skillpass-env.sh
 #
 # Optional:
-#   ./generate-env.sh .env.production
-#   ./generate-env.sh --force
-#   ./generate-env.sh .env.production --force
+#   ./generate-skillpass-env.sh .env.production
+#   ./generate-skillpass-env.sh --force
+#   ./generate-skillpass-env.sh .env.production --force
 #
 # The generated file is mode 600 and should NEVER be committed to Git.
 
@@ -27,15 +27,16 @@ for arg in "$@"; do
 SkillPass Care environment generator
 
 Usage:
-  ./generate-env.sh [output-file] [--force]
+  ./generate-skillpass-env.sh [output-file] [--force]
 
 Examples:
-  ./generate-env.sh
-  ./generate-env.sh .env.production
-  ./generate-env.sh .env.production --force
+  ./generate-skillpass-env.sh
+  ./generate-skillpass-env.sh .env.production
+  ./generate-skillpass-env.sh .env.production --force
 
 Generates:
   DEMO_SESSION_SECRET
+  OWNER_PROOF_CHALLENGE_SECRET
   ISSUER_KEYS
   PROVIDER_KEYS
   OWNER_KEYS
@@ -83,6 +84,7 @@ random_hex() {
 
 # 48 random bytes (96 hex chars) for the signed public-demo session.
 DEMO_SESSION_SECRET="$(random_hex 48)"
+OWNER_PROOF_CHALLENGE_SECRET="$(random_hex 48)"
 
 # 32 random bytes (64 hex chars) per API actor key.
 ISSUER_SECRET="$(random_hex 32)"
@@ -94,7 +96,7 @@ BOB_SECRET="$(random_hex 32)"
 cat > "$OUTPUT" <<EOF
 # ============================================================
 # SkillPass Care
-# Generated automatically by generate-env.sh
+# Generated automatically by generate-skillpass-env.sh
 # DO NOT COMMIT THIS FILE.
 # ============================================================
 
@@ -112,6 +114,8 @@ WEB_ORIGINS=
 # ------------------------------------------------------------
 ENABLE_DEMO_ENDPOINTS=true
 DEMO_SESSION_SECRET=${DEMO_SESSION_SECRET}
+OWNER_PROOF_CHALLENGE_SECRET=${OWNER_PROOF_CHALLENGE_SECRET}
+OWNER_PROOF_TTL_SECONDS=120
 
 # ------------------------------------------------------------
 # Ledger
@@ -145,6 +149,7 @@ echo "  $OUTPUT"
 echo
 echo "Generated securely:"
 echo "  - DEMO_SESSION_SECRET"
+echo "  - OWNER_PROOF_CHALLENGE_SECRET"
 echo "  - 1 issuer API key"
 echo "  - 2 provider API keys"
 echo "  - 2 owner API keys"

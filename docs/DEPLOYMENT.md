@@ -1,120 +1,41 @@
 # Deployment
 
-## Recommended: public Vercel demo
+## Vercel public demo
 
-The public demo is designed to work correctly on Vercel's horizontally scaled runtime. Demo entitlement state is serialized into a signed, HttpOnly cookie, so the Alice → Bob lifecycle does not depend on one function instance retaining memory between requests.
+The deployment uses one API entrypoint: `api/router.ts`. Do not restore `api/index.ts` or `api/[...path].ts`.
 
-### 1. Import the repository
-
-Create a Vercel project from the repository root. Do not set the Root Directory to `apps/web`; the root contains the API function and `vercel.json`.
-
-Vercel should use:
-
-```text
-Build command: npm run build:vercel
-Output directory: apps/web/dist
-```
-
-These are already specified in `vercel.json`.
-
-The repository intentionally keeps `NODE_ENV=production` for deployed runtime security, while the Vercel install command uses `npm install --production=false` so build-time tools such as TypeScript are still installed. The root `.npmrc` also sets `include=dev` as a defensive fallback.
-
-If a build fails with `tsc: command not found`, verify that Vercel is using the repository-root `vercel.json` and that the Install Command has not been overridden in the dashboard. The expected command is:
-
-```text
-npm install --production=false --no-audit --no-fund
-```
-
-### 2. Add environment variables
-
-Required secret for the public demo:
+Required production environment variable:
 
 ```env
-DEMO_SESSION_SECRET=<at-least-32-random-bytes>
+DEMO_SESSION_SECRET=<at-least-32-random-characters>
 ```
 
-For this repository's Vercel deployment, `vercel.json` deliberately pins the two **non-secret** public-demo flags passed to Vercel Functions:
+`vercel.json` does **not** hardcode deployment mode. The application defaults remain `ENABLE_DEMO_ENDPOINTS=true` and `LEDGER_MODE=memory`, but production behavior should be controlled through deployment environment variables. This keeps the same repository usable for the public demo and a separate authenticated pilot without editing deployment config.
 
-```env
-ENABLE_DEMO_ENDPOINTS=true
-LEDGER_MODE=memory
-```
+The memory ledger is not used for public demo lifecycle state; the demo uses a signed HttpOnly browser-session cookie.
 
-This prevents the web UI from deploying successfully while `/api/demo/*` is accidentally disabled. Keep `DEMO_SESSION_SECRET` in Vercel Project Settings rather than source control.
-
-`DEMO_SESSION_SECRET` protects the integrity of the demo cookie. The public demo is still explicitly non-authoritative and must never be treated as a real ownership proof.
-
-You normally do **not** need `WEB_ORIGINS` on Vercel because the browser calls `/api` on the same origin.
-
-### 3. Verify after deployment
-
-The deployment uses a fixed Vercel Function at `api/router.ts` and explicit
-rewrites for `/api` and `/api/:path*`. This is intentional: it avoids relying
-on framework-style splat-function discovery for the standalone Vite app.
-
-The old `api/[...path].ts` and `api/index.ts` entrypoints must not be present
-in the deployed repository. Vercel gives filesystem routes precedence over
-rewrites, so leaving the old splat function in place can intercept `/api/meta`
-before the fixed router rewrite runs.
-
-Check:
-
-```text
-GET /api/health/live   -> 200
-GET /api/health/ready  -> 200 in memory demo mode
-GET /api/meta          -> demoEnabled: true, demoRoute: "/demo/state"
-GET /api/demo/state    -> 200
-```
-
-Then run the UI lifecycle:
-
-```text
-Reset → Verify Alice → Transfer to Bob → Reject Alice → Verify Bob → Use service
-```
-
-Reload the page after transfer. The demo state should remain in the same browser session.
-
-
-### Vercel `404 NOT_FOUND` on `/api/meta`
-
-If Vercel's own 404 page appears (rather than the API's JSON `NOT_FOUND`
-response), the request never reached Express. Confirm that the deployed
-`vercel.json` contains these rewrites:
-
-```json
-"rewrites": [
-  { "source": "/api", "destination": "/api/router" },
-  {
-    "source": "/api/:path*",
-    "destination": "/api/router?__skillpass_path=:path*"
-  }
-]
-```
-
-Also confirm the deployment contains `api/router.ts` and that the Vercel
-project Root Directory is the repository root. Do not point the Root Directory
-at `apps/api` or `apps/web`.
+Deploy from the repository root. The rewrites map `/api/:path*` to `api/router.ts`.
 
 ## Authenticated off-chain pilot
 
-To disable public demo routes and expose the credential-bound pilot API, first remove the public-demo `env` block from `vercel.json` (or use a separate deployment configuration), then configure:
+Configure at minimum:
 
 ```env
 NODE_ENV=production
 ENABLE_DEMO_ENDPOINTS=false
 LEDGER_MODE=memory
-ISSUER_KEYS=seller-id:<secret>
-PROVIDER_KEYS=provider-a:<secret>,provider-b:<secret>
-OWNER_KEYS=owner-a:<secret>,owner-b:<secret>
+OWNER_PROOF_CHALLENGE_SECRET=<at-least-32-random-characters>
+OWNER_PROOF_TTL_SECONDS=120
+ISSUER_KEYS=seller-id:<random-secret>
+PROVIDER_KEYS=provider-a:<random-secret>,provider-b:<random-secret>
+OWNER_KEYS=owner-a:<random-secret>,owner-b:<random-secret>
 ```
 
-The HTTP API requires `expectedVersion` for transfer, claim, and status mutations.
+Each production actor secret must be at least 16 characters. Use a real secret manager and rotation procedure.
 
-### Important limitation
+### Critical limitation
 
-The current memory ledger is process-local. It is suitable for local development or a controlled single-process pilot, **not** durable horizontally scaled Vercel production state. Do not use it for real customer entitlements on serverless infrastructure.
-
-For a durable off-chain pilot, add a database-backed `ServiceRightLedger`. For the intended CKB architecture, implement the live-Cell adapter instead.
+`InMemoryLedger` is process-local. Do not treat a horizontally scaled Vercel deployment as durable pilot storage. Use a database-backed adapter or implement the CKB adapter before real entitlement use.
 
 ## CKB mode
 
@@ -124,40 +45,28 @@ CKB_RPC_URL=https://testnet.ckbapp.dev
 CKB_INDEXER_URL=https://testnet.ckbapp.dev
 ```
 
-CKB mode currently performs only an RPC health probe. Readiness stays false and state operations return `503 NOT_IMPLEMENTED` until all of the following exist:
+CKB readiness remains false and state operations return `503 NOT_IMPLEMENTED` until live-Cell resolution, type-script/schema deployment, wallet transactions and claim semantics exist.
 
-- a versioned SkillPass Cell schema,
-- canonical live-Cell resolution,
-- wallet-signed issuance/transfer flow,
-- durable claim semantics,
-- issuer-controlled status transition rules.
-
-This fail-closed behavior is intentional.
-
-## Local development
+## Local verification
 
 ```bash
 cp .env.example .env
-npm install
+npm install --no-audit --no-fund
 npm run check
 npm run dev
 ```
 
-Frontend: `http://localhost:5173`
+## Post-deploy smoke checks
 
-API: `http://localhost:8787`
+1. `GET /api/meta` returns v0.4 metadata.
+2. `GET /api/demo/state` returns the demo right when demo mode is enabled.
+3. Alice verifies in the demo, transfer Alice→Bob succeeds, then Alice is denied and Bob is accepted.
+4. `GET /api/entitlements` returns `401` without credentials.
+5. Authenticated pilot verification rejects a bare claimant without challenge/proof.
+6. Actor-scoped reads do not reveal unrelated rights.
+7. Repeating the same claim event does not decrement twice.
+8. CKB mode still fails closed until the real protocol is enabled.
 
-The Vite dev server proxies browser requests from `/api/*` to the local API, matching the production same-origin URL shape.
+## Dependency reproducibility
 
-## Security checklist
-
-Before any non-demo deployment:
-
-- rotate all pilot secrets and keep them only in Vercel environment variables;
-- disable `/demo/*` when it is not needed;
-- keep `WEB_ORIGINS` empty for same-origin deployments, or set an exact allow-list for intentional cross-origin clients;
-- do not expose a memory ledger as durable production storage;
-- confirm `/api/entitlements` returns `401` without credentials;
-- confirm all mutation clients send `expectedVersion`;
-- verify the deployed Content-Security-Policy and HSTS headers;
-- confirm CKB mode remains fail-closed until the real protocol is deployed.
+Direct dependency versions are exact-pinned. Registry access was unavailable while preparing this archive, so no fake lockfile is included. In a networked environment run `npm install`, commit the generated `package-lock.json`, then change CI/Vercel installation to `npm ci` for the release branch.

@@ -1,8 +1,10 @@
 import type { CreateServiceRightInput, ServiceRight } from "@skillpass/core";
 import type {
+  ClaimMutationOptions,
   EntitlementId,
   EntitlementStatus,
   LedgerHealth,
+  LedgerListFilter,
   MutationOptions,
   Principal,
   ProviderId
@@ -12,24 +14,24 @@ import type {
 export interface ServiceRightLedger {
   issue(input: CreateServiceRightInput): Promise<ServiceRight>;
   get(entitlementId: EntitlementId): Promise<ServiceRight | undefined>;
-  list(): Promise<ServiceRight[]>;
+  list(filter?: LedgerListFilter): Promise<ServiceRight[]>;
   transfer(
     entitlementId: EntitlementId,
     from: Principal,
     to: Principal,
-    options?: MutationOptions
+    options: MutationOptions
   ): Promise<ServiceRight>;
   claim(
     entitlementId: EntitlementId,
     claimant: Principal,
     providerId: ProviderId,
-    options?: MutationOptions
+    options: ClaimMutationOptions
   ): Promise<ServiceRight>;
   setStatus(
     entitlementId: EntitlementId,
     issuerId: string,
     status: EntitlementStatus,
-    options?: MutationOptions
+    options: MutationOptions
   ): Promise<ServiceRight>;
   health(): Promise<LedgerHealth>;
   resetDemo?(): Promise<ServiceRight>;

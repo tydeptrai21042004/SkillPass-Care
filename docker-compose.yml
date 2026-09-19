@@ -4,13 +4,16 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       PORT: 8787
       WEB_ORIGINS: http://localhost:5173
       LEDGER_MODE: memory
       ENABLE_DEMO_ENDPOINTS: "true"
-      ISSUER_KEYS: seller-demo:local-issuer-secret
-      PROVIDER_KEYS: repair-a:local-provider-a-secret,repair-b:local-provider-b-secret
-      OWNER_KEYS: alice:local-alice-secret,bob:local-bob-secret,carol:local-carol-secret
+      DEMO_SESSION_SECRET: local-demo-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+      OWNER_PROOF_CHALLENGE_SECRET: local-proof-secret-0123456789-abcdefghijklmnopqrstuvwxyz
+      OWNER_PROOF_TTL_SECONDS: "120"
+      ISSUER_KEYS: seller-demo:local-issuer-secret-0123456789
+      PROVIDER_KEYS: repair-a:local-provider-a-secret-0123456789,repair-b:local-provider-b-secret-0123456789
+      OWNER_KEYS: alice:local-alice-secret-0123456789,bob:local-bob-secret-0123456789,carol:local-carol-secret-0123456789
     ports:
       - "8787:8787"

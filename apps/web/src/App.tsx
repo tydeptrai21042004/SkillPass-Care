@@ -207,7 +207,7 @@ function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | nu
       <div><p className="kicker">Reviewer view</p><h2>What this build proves — and what it does not</h2><p>The deployable demo exercises the ownership/authorization invariant without overstating chain integration. The public demo is serverless-safe; the CKB adapter remains deliberately fail-closed.</p></div>
       <div className="readiness">
         <Readiness label="Vercel demo" value="Ready" tone="ok" />
-        <Readiness label="Authenticated pilot API" value="Implemented" tone="ok" />
+        <Readiness label="Owner proof + scoped API" value="Implemented" tone="ok" />
         <Readiness label="CKB RPC boundary" value="Probe only" tone="warn" />
         <Readiness label="CKB write path" value="Not implemented" tone="warn" />
       </div>
@@ -219,9 +219,10 @@ function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | nu
         <h3>Every provider decision resolves current state.</h3>
         <div className="logicStack">
           {[
+            "claimant proof is request-bound (pilot API)",
             "entitlement exists",
             "status is ACTIVE and not expired",
-            "claimant equals current owner",
+            "claimant equals latest current owner",
             "provider is accepted",
             "remaining service visits > 0"
           ].map((item) => <div key={item}><span>✓</span>{item}</div>)}
@@ -231,7 +232,7 @@ function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | nu
         <p className="kicker">Deployment boundary</p>
         <h3>Stateless where Vercel requires statelessness.</h3>
         <p className="bodyCopy">Public demo state is carried in a signed, HttpOnly browser cookie. Authenticated memory-ledger routes remain suitable for local/single-process pilots, not durable multi-instance production.</p>
-        <div className="miniStats"><Metric label="API" value={`v${meta?.apiVersion ?? "—"}`} /><Metric label="Ledger" value={meta?.ledgerMode ?? "—"} /></div>
+        <div className="miniStats"><Metric label="API" value={`v${meta?.apiVersion ?? "—"}`} /><Metric label="Owner proof" value={meta?.ownerProof ?? "—"} /></div>
       </article>
     </section>
 
@@ -242,10 +243,11 @@ function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | nu
         <Info label="Issuer" value={right.issuerId} />
         <Info label="Owner principal" value={right.owner} />
         <Info label="Status" value={right.status} />
-        <Info label="Version" value={String(right.version)} />
+        <Info label="Schema" value={`v${right.schemaVersion}`} />
+        <Info label="State version" value={String(right.version)} />
         <Info label="Remaining claims" value={String(right.remainingClaims)} />
         <Info label="Updated" value={new Date(right.updatedAt).toLocaleString()} />
-        <Info label="Product commitment" value={right.productHash} wide mono />
+        <Info label="Product commitment" value={right.productCommitment} wide mono />
         <Info label="Accepted providers" value={right.acceptedProviderIds.join(", ")} wide />
       </div>
       <div className="boundaryNotice"><span>!</span><div><strong>CKB honesty boundary</strong><p><code>LEDGER_MODE=ckb</code> reports RPC reachability but readiness stays false until a versioned Cell schema, canonical live-Cell resolution, and wallet-signed state transitions are implemented.</p></div></div>

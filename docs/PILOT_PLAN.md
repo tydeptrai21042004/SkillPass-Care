@@ -2,14 +2,14 @@
 
 ## Pilot question
 
-Do sellers, buyers, and independent service providers benefit from service coverage that can follow product ownership?
+Do sellers, buyers, and independent service providers benefit when a portable service entitlement is transferred alongside a second-hand product sale?
 
 ## Target pilot
 
 - 1 seller/issuer.
 - 2 independently operated service providers.
 - 10-20 covered products or simulated products.
-- At least one ownership transfer.
+- At least one physical-product handoff paired with a service-right transfer.
 - At least one successful post-transfer service verification.
 
 ## Week 1 — Discovery
@@ -19,7 +19,7 @@ Interview at least:
 - 5 sellers/repair providers.
 - 5 buyers/owners.
 
-Capture the current workflow for warranty/service transfer, proof of purchase, owner verification, and provider reconciliation.
+Capture the current workflow for warranty/service transfer, proof of purchase, physical handoff, entitlement-owner verification, and provider reconciliation.
 
 ## Week 2 — Product adaptation
 
@@ -61,6 +61,6 @@ Report:
 
 ## Success criteria
 
-The pilot is promising if at least one real owner transfer is followed by independent provider recognition of the new owner without manual synchronization of a shared entitlement table.
+The pilot is promising if at least one real product handoff + entitlement transfer is followed by independent provider recognition of the new entitlement owner without manual synchronization of a shared entitlement table.
 
 A negative result is also valuable. If users rarely transfer service rights or providers reject the workflow, do not hide that result.

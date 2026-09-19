@@ -1,6 +1,6 @@
 {
   "name": "@skillpass/provider-sdk",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -16,6 +16,7 @@
     "@skillpass/ckb-adapter": "*"
   },
   "devDependencies": {
-    "vitest": "^2.1.4"
+    "vitest": "2.1.4",
+    "@types/node": "22.10.0"
   }
 }

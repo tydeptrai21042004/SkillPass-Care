@@ -1,39 +1,33 @@
 # Product Specification
 
-## One-sentence product
+## Product statement
 
-SkillPass Care lets service coverage follow ownership of a product and lets independent service providers verify the current holder without sharing one entitlement database.
+SkillPass Care makes a remaining service entitlement portable when a second-hand product is sold and lets accepted providers verify who currently controls that entitlement without relying on one provider-owned customer-entitlement table.
 
-## Primary actors
+## Actors
 
-### Issuer / seller
-Creates a service plan and defines its provider acceptance policy.
-
-### Current owner
-Holds the entitlement and can request covered service. If transfer is permitted, the owner can move the entitlement to a buyer.
-
-### Service provider
-Independently verifies the live entitlement before serving the customer.
+- **Issuer/seller** — creates coverage and provider acceptance policy.
+- **Current entitlement owner** — proves control, uses service and may transfer a transferable right.
+- **Service provider** — resolves current state and verifies owner proof before serving.
 
 ## Core user stories
 
-1. As a seller, I can issue 90-day service coverage for a product.
-2. As an owner, I can prove active coverage without giving a provider access to the seller's customer database.
-3. As a provider, I can verify that the claimant is the current entitlement owner.
-4. As an owner, I can transfer a transferable entitlement when I sell the product.
-5. As a previous owner, I can no longer use the right after transfer.
-6. As the new owner, I can use remaining coverage at another accepted provider.
+1. Seller issues time/claim-limited service coverage.
+2. Owner proves entitlement control without a provider trusting a typed username.
+3. Provider verifies current state immediately before service.
+4. Owner transfers the service right to a buyer as part of the product sale.
+5. Previous owner becomes ineligible after the state transition.
+6. New owner can use remaining coverage at another accepted provider.
+7. Retried service-claim requests do not consume coverage twice.
 
-## Non-goals for the pilot
+## Explicit boundary
 
-- cryptocurrency checkout as a requirement,
-- generalized NFT marketplace,
-- reputation system,
-- DID product,
-- AI agent payment platform,
-- full warranty-law automation,
-- mainnet launch.
+For a normal physical item, SkillPass does **not** automatically prove physical ownership. The protocol proves control of the service entitlement. A pilot must operationally pair product handoff and service-right transfer.
 
-## Product success signal
+## Non-goals
 
-A genuine second owner receives service from an independent provider using the transferred entitlement, without manual reconciliation of a shared entitlement table.
+No marketplace, reputation layer, DID product, mandatory crypto checkout, AI-agent platform, legal-warranty automation or mainnet claim is needed to validate the core protocol.
+
+## Success signal
+
+A real second owner receives service from an independently operated accepted provider using the transferred entitlement, with no manual shared entitlement-table reconciliation and with auditable proof of the authorization decision.

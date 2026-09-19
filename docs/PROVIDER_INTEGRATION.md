@@ -1,45 +1,35 @@
 # Provider Integration
 
-A service provider should be able to integrate SkillPass without operating the issuer's database.
+A provider should be able to verify a service right without reading the issuer's customer database.
 
-## Minimal integration
+## Required production behavior
+
+1. Provider identity is locally configured/authenticated.
+2. Provider requests an owner challenge bound to itself and the entitlement.
+3. Current owner signs the canonical challenge (pilot: HMAC; target: wallet key).
+4. Provider verifies proof and resolves the latest entitlement state.
+5. Provider evaluates status, expiry, owner, provider policy and remaining claims.
+6. Provider records signed authorization evidence.
+7. A service consumption uses a stable `serviceEventId`; retries reuse the same ID.
+8. Any inability to resolve authoritative state fails closed.
+
+## Provider SDK
+
+`ProviderVerifier` intentionally owns only the state-verification/evidence layer. The HTTP API currently performs pilot challenge verification before invoking it. In the CKB target, a provider deployment should combine the SDK with wallet-signature verification and canonical live-Cell resolution.
 
 ```ts
-import { ProviderVerifier } from "@skillpass/provider-sdk";
-
 const verifier = new ProviderVerifier({
   providerId: "repair-shop-a",
-  ledger
+  ledger,
+  evidenceSigner
 });
 
-const decision = await verifier.verify({
+const evidence = await verifier.verify({
   entitlementId: "ent-123",
-  claimant: "ckt1...alice"
+  claimant: "ckt1...owner",
+  challengeId: "...",
+  requestHash: "sha256:..."
 });
-
-if (!decision.allowed) {
-  // Deny service and display decision.reason.
-}
 ```
 
-## Provider responsibilities
-
-A provider should:
-
-1. Keep its own provider identity/configuration.
-2. Verify the latest entitlement state through the ledger adapter.
-3. Fail closed when live state cannot be verified.
-4. Record an audit event for accepted/rejected service attempts.
-5. Never trust owner information supplied only by the client.
-
-## What is intentionally *not* shared
-
-- customer entitlement database,
-- session cookies,
-- provider internal user table,
-- provider private signing keys,
-- repair/service history beyond the records required by the pilot.
-
-## Production note
-
-For real CKB integration, the provider should resolve the canonical live Cell through a trusted RPC/indexer strategy and verify ownership against the Cell's lock script. A production deployment must define confirmation and reorganization handling explicitly.
+Do not treat a bare claimant string as identity proof.

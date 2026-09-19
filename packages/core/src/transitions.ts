@@ -1,4 +1,10 @@
-import { SkillPassError, type EntitlementStatus, type MutationOptions, type Principal, type ProviderId } from "@skillpass/shared";
+import {
+  SkillPassError,
+  type EntitlementStatus,
+  type MutationOptions,
+  type Principal,
+  type ProviderId
+} from "@skillpass/shared";
 import type { ServiceRight } from "./model.js";
 import { evaluateAuthorization } from "./policy.js";
 
@@ -6,7 +12,7 @@ export function transferServiceRight(
   right: ServiceRight,
   from: Principal,
   to: Principal,
-  options: MutationOptions = {},
+  options: MutationOptions,
   now = new Date()
 ): ServiceRight {
   requireVersion(right, options);
@@ -22,7 +28,7 @@ export function claimServiceRight(
   right: ServiceRight,
   claimant: Principal,
   providerId: ProviderId,
-  options: MutationOptions = {},
+  options: MutationOptions,
   now = new Date()
 ): ServiceRight {
   requireVersion(right, options);
@@ -41,7 +47,7 @@ export function setServiceRightStatus(
   right: ServiceRight,
   issuerId: string,
   status: EntitlementStatus,
-  options: MutationOptions = {},
+  options: MutationOptions,
   now = new Date()
 ): ServiceRight {
   requireVersion(right, options);
@@ -54,7 +60,10 @@ export function setServiceRightStatus(
 }
 
 function requireVersion(right: ServiceRight, options: MutationOptions): void {
-  if (options.expectedVersion !== undefined && right.version !== options.expectedVersion) {
+  if (!Number.isInteger(options.expectedVersion) || options.expectedVersion < 1) {
+    throw new SkillPassError("VALIDATION_ERROR", "expectedVersion must be a positive integer", 400);
+  }
+  if (right.version !== options.expectedVersion) {
     throw new SkillPassError(
       "VERSION_CONFLICT",
       `stale entitlement version: expected ${options.expectedVersion}, current ${right.version}`,

@@ -4,6 +4,8 @@ import {
   type EntitlementId,
   type EntitlementStatus,
   type LedgerHealth,
+  type ClaimMutationOptions,
+  type LedgerListFilter,
   type MutationOptions,
   type Principal,
   type ProviderId
@@ -59,7 +61,7 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     return this.notImplemented("resolve live entitlement Cell");
   }
 
-  async list(): Promise<ServiceRight[]> {
+  async list(_filter?: LedgerListFilter): Promise<ServiceRight[]> {
     return this.notImplemented("list live entitlement Cells");
   }
 
@@ -67,7 +69,7 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     _id: EntitlementId,
     _from: Principal,
     _to: Principal,
-    _options?: MutationOptions
+    _options: MutationOptions
   ): Promise<ServiceRight> {
     return this.notImplemented("wallet-signed CKB transfer");
   }
@@ -76,7 +78,7 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     _id: EntitlementId,
     _claimant: Principal,
     _providerId: ProviderId,
-    _options?: MutationOptions
+    _options: ClaimMutationOptions
   ): Promise<ServiceRight> {
     return this.notImplemented("durable claim transition");
   }
@@ -85,7 +87,7 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     _id: EntitlementId,
     _issuerId: string,
     _status: EntitlementStatus,
-    _options?: MutationOptions
+    _options: MutationOptions
   ): Promise<ServiceRight> {
     return this.notImplemented("issuer-controlled status transition");
   }

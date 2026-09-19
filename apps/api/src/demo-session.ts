@@ -13,9 +13,10 @@ const COOKIE_NAME = "skillpass_demo";
 const DEFAULT_DEMO_SECRET = "skillpass-care-public-demo-v1-not-a-security-boundary";
 
 const demoRightSchema = z.object({
+  schemaVersion: z.literal(1),
   id: z.string().min(1).max(256),
   issuerId: z.string().min(1).max(256),
-  productHash: z.string().min(1).max(512),
+  productCommitment: z.string().min(1).max(512),
   owner: z.string().min(1).max(256),
   serviceClass: z.string().min(1).max(128),
   remainingClaims: z.number().int().min(0).max(10_000),
@@ -47,7 +48,11 @@ const providerClaimSchema = z.object({
 
 export function createDemoRouter(options: { secret?: string; secureCookies?: boolean } = {}) {
   const router = express.Router();
-  const secret = options.secret?.trim() || DEFAULT_DEMO_SECRET;
+  const configuredSecret = options.secret?.trim() ?? "";
+  if (process.env.NODE_ENV === "production" && !configuredSecret) {
+    throw new Error("demo session secret is required in production");
+  }
+  const secret = configuredSecret || DEFAULT_DEMO_SECRET;
 
   router.get("/state", (req, res) => {
     const right = readDemoRight(req, secret) ?? createDemoRight();
@@ -107,7 +112,8 @@ export function createDemoRight(now = new Date()): ServiceRight {
   return {
     id: "ent-skillpass-care-demo",
     issuerId: "seller-demo",
-    productHash: "sha256:42f4dc06f496e6209f50c0849c4fb14d0b2a4f752d636a28bb7e091ea462863c",
+    schemaVersion: 1,
+    productCommitment: "sha256:42f4dc06f496e6209f50c0849c4fb14d0b2a4f752d636a28bb7e091ea462863c",
     owner: "alice",
     serviceClass: "STANDARD_90D",
     remainingClaims: 3,

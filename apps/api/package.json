@@ -1,6 +1,6 @@
 {
   "name": "@skillpass/api",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,18 +15,18 @@
     "@skillpass/config": "*",
     "@skillpass/provider-sdk": "*",
     "@skillpass/core": "*",
-    "cors": "^2.8.5",
-    "express": "^4.21.1",
-    "zod": "^3.23.8",
+    "cors": "2.8.5",
+    "express": "4.21.1",
+    "zod": "3.23.8",
     "@skillpass/shared": "*"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "supertest": "^7.0.0",
-    "@types/supertest": "^6.0.2",
-    "tsx": "^4.19.2",
-    "vitest": "^2.1.4",
-    "@types/node": "^22.10.0"
+    "@types/cors": "2.8.17",
+    "@types/express": "4.17.21",
+    "supertest": "7.0.0",
+    "@types/supertest": "6.0.2",
+    "tsx": "4.19.2",
+    "vitest": "2.1.4",
+    "@types/node": "22.10.0"
   }
 }

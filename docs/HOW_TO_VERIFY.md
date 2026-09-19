@@ -1,103 +1,81 @@
-# How to verify the build
+# How to Verify v0.4
 
-## Automated checks
+## Dependency-free repository preflight
 
 ```bash
-npm install
+npm run preflight
+```
+
+This confirms the single Vercel entrypoint, required hardening files and workspace version consistency.
+
+## Full checks
+
+```bash
+npm install --no-audit --no-fund
 npm run check
 ```
 
-The check command runs workspace type checks, tests, package builds, API build, and web build.
+## Public demo lifecycle
 
-## Public demo API locally
+Run `npm run dev`, use a cookie jar, and exercise:
 
-Start the project:
-
-```bash
-npm run dev
+```text
+GET /demo/state
+Alice at repair-a -> ALLOW
+transfer Alice -> Bob
+Alice at repair-a -> WRONG_OWNER
+Bob at repair-b -> ALLOW
 ```
 
-The browser uses `http://localhost:5173/api/*`, which Vite proxies to the API. For direct API testing, use port `8787`.
+The public demo is intentionally actor-simulated and does not test proof-of-possession.
 
-Use a cookie jar because the demo lifecycle is session-scoped:
+## Authenticated owner-proof flow
 
-```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
-  http://localhost:8787/demo/state
-```
+Use credentials from `.env`.
 
-Reset:
+1. Provider A creates a verify challenge:
 
 ```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+curl -s -X POST http://localhost:8787/entitlements/ENT_ID/challenges \
   -H 'content-type: application/json' \
-  -d '{}' \
-  http://localhost:8787/demo/reset
+  -H 'x-provider-id: repair-a' -H 'x-provider-key: PROVIDER_SECRET' \
+  -d '{"claimant":"alice","action":"VERIFY"}'
 ```
 
-From the returned JSON, note the entitlement `id` and current `version`.
-
-Verify Alice:
+2. Alice signs the returned `token` using the pilot signing endpoint:
 
 ```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
+curl -s -X POST http://localhost:8787/owner-proof/sign \
   -H 'content-type: application/json' \
-  -d '{"providerId":"repair-a","claimant":"alice"}' \
-  http://localhost:8787/demo/entitlements/ENT_ID/verify
+  -H 'x-owner-id: alice' -H 'x-owner-key: ALICE_SECRET' \
+  -d '{"challengeToken":"TOKEN"}'
 ```
 
-Transfer Alice → Bob:
+3. Provider submits claimant + token + proof to `/entitlements/ENT_ID/verify`.
+
+Expected evidence includes `requestHash`, `stateRef`, expiry and `HMAC-SHA256-PILOT` signature.
+
+## Claim replay check
+
+Create a `CLAIM` challenge with a stable `serviceEventId`, sign it, then submit the same claim twice. `remainingClaims` must decrement only once and both exact retries must return the same committed result. A different claimant/request reusing the same provider event ID must return `409 IDEMPOTENCY_CONFLICT`.
+
+## Scoped read check
+
+- no credentials → `401`;
+- owner → only current-owner rights;
+- provider → only rights accepting that provider;
+- issuer → only rights issued by that issuer.
+
+A provider requesting an unrelated entitlement detail should receive `404`.
+
+## Product commitment helper
 
 ```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
-  -H 'content-type: application/json' \
-  -d '{"from":"alice","to":"bob","expectedVersion":1}' \
-  http://localhost:8787/demo/entitlements/ENT_ID/transfer
+npm run product:commitment -- seller-namespace serial-or-internal-id
 ```
 
-Verify the previous owner is denied:
+Store the returned salt off-chain if future recomputation is needed. Only the `sha256:<64 hex>` commitment belongs in the entitlement.
 
-```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
-  -H 'content-type: application/json' \
-  -d '{"providerId":"repair-a","claimant":"alice"}' \
-  http://localhost:8787/demo/entitlements/ENT_ID/verify
-```
+## CKB boundary check
 
-Verify Bob at Provider B:
-
-```bash
-curl -c /tmp/skillpass-cookie -b /tmp/skillpass-cookie \
-  -H 'content-type: application/json' \
-  -d '{"providerId":"repair-b","claimant":"bob"}' \
-  http://localhost:8787/demo/entitlements/ENT_ID/verify
-```
-
-## Protected-read check
-
-Without credentials this must return `401`:
-
-```bash
-curl -i http://localhost:8787/entitlements
-```
-
-With configured provider credentials it should return the pilot ledger state:
-
-```bash
-curl \
-  -H 'x-provider-id: repair-a' \
-  -H 'x-provider-key: local-provider-a-secret' \
-  http://localhost:8787/entitlements
-```
-
-## Vercel post-deploy smoke test
-
-Replace `https://YOUR-PROJECT.vercel.app` below:
-
-```bash
-curl https://YOUR-PROJECT.vercel.app/api/health/live
-curl https://YOUR-PROJECT.vercel.app/api/health/ready
-curl https://YOUR-PROJECT.vercel.app/api/meta
-```
-
-Then open the deployment in a browser and run all six lifecycle buttons. Reload after transfer and confirm Bob remains the current demo holder for that browser session.
+Set `LEDGER_MODE=ckb`. `/health/ready` should remain `503`, and state operations should fail with `NOT_IMPLEMENTED`. This is expected until the real live-Cell protocol is deployed.

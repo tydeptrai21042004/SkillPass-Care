@@ -2,9 +2,10 @@ const configuredApi = import.meta.env.VITE_API_BASE_URL;
 const API = (typeof configuredApi === "string" && configuredApi ? configuredApi : "/api").replace(/\/$/, "");
 
 export interface ServiceRight {
+  schemaVersion: 1;
   id: string;
   issuerId: string;
-  productHash: string;
+  productCommitment: string;
   owner: string;
   serviceClass: string;
   remainingClaims: number;
@@ -30,6 +31,11 @@ export interface VerificationEvidence {
 export interface ApiMeta {
   name: string;
   apiVersion: string;
+  serviceRightSchemaVersion: number;
+  ownerProof: string;
+  ownerProofTtlSeconds: number;
+  claimIdempotency: boolean;
+  scopedReads: boolean;
   demoEnabled: boolean;
   demoRoute: string | null;
   ledgerMode: "memory" | "ckb";

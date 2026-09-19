@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { evaluateAuthorization, type ServiceRight } from "../src/index.js";
 
 const base: ServiceRight = {
+  schemaVersion: 1,
   id: "ent-1",
   issuerId: "seller",
-  productHash: "sha256:demo",
+  productCommitment: "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   owner: "alice",
   serviceClass: "STANDARD_90D",
   remainingClaims: 2,

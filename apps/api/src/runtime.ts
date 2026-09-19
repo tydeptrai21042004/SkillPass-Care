@@ -26,6 +26,8 @@ export function getRuntimeApp() {
     webOrigins: config.WEB_ORIGINS,
     demoEnabled: config.ENABLE_DEMO_ENDPOINTS,
     demoSessionSecret: config.DEMO_SESSION_SECRET,
+    ownerProofChallengeSecret: config.OWNER_PROOF_CHALLENGE_SECRET,
+    ownerProofTtlSeconds: config.OWNER_PROOF_TTL_SECONDS,
     secureDemoCookies: config.NODE_ENV === "production",
     credentials: {
       issuers: config.ISSUER_KEYS,

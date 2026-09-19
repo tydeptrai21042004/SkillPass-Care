@@ -3,31 +3,78 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z, ZodError } from "zod";
 import type { ServiceRightLedger } from "@skillpass/ckb-adapter";
-import { ProviderVerifier } from "@skillpass/provider-sdk";
-import { SkillPassError } from "@skillpass/shared";
-import { authenticate, authenticateAny, type CredentialRegistry } from "./auth.js";
+import { createHmacEvidenceSigner, ProviderVerifier } from "@skillpass/provider-sdk";
+import { SkillPassError, type OwnerProof } from "@skillpass/shared";
+import { authenticate, authenticateAny, type ActorType, type CredentialRegistry } from "./auth.js";
 import { createDemoRouter } from "./demo-session.js";
+import {
+  claimRequestHash,
+  createPilotOwnerProof,
+  issueOwnerChallenge,
+  ownerProofRequestHash,
+  verifyChallengeToken,
+  verifyPilotOwnerProof
+} from "./owner-proof.js";
 
 const createSchema = z.object({
-  productHash: z.string().trim().min(1).max(512),
+  productCommitment: z.string().trim().regex(/^sha256:[0-9a-f]{64}$/i, "productCommitment must be sha256:<64 hex>").optional(),
+  /** @deprecated accepted temporarily for v0.3 clients */
+  productHash: z.string().trim().regex(/^sha256:[0-9a-f]{64}$/i, "productHash must be sha256:<64 hex>").optional(),
   owner: z.string().trim().min(1).max(256),
   serviceClass: z.string().trim().min(1).max(128),
   remainingClaims: z.number().int().positive().max(10_000),
   expiresAt: z.string().datetime(),
   transferable: z.boolean(),
   acceptedProviderIds: z.array(z.string().trim().min(1).max(128)).min(1).max(100)
-}).strict();
+}).strict().superRefine((value, ctx) => {
+  if (!value.productCommitment && !value.productHash) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "productCommitment is required", path: ["productCommitment"] });
+  }
+  if (value.productCommitment && value.productHash && value.productCommitment.toLowerCase() !== value.productHash.toLowerCase()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "productCommitment and legacy productHash must match", path: ["productCommitment"] });
+  }
+  if (new Set(value.acceptedProviderIds).size !== value.acceptedProviderIds.length) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "acceptedProviderIds must be unique", path: ["acceptedProviderIds"] });
+  }
+});
 
 const transferSchema = z.object({
   to: z.string().trim().min(1).max(256),
   expectedVersion: z.number().int().positive()
 }).strict();
 
-const verifySchema = z.object({ claimant: z.string().trim().min(1).max(256) }).strict();
-const claimSchema = z.object({
+const challengeSchema = z.object({
   claimant: z.string().trim().min(1).max(256),
+  action: z.enum(["VERIFY", "CLAIM"]),
+  serviceEventId: z.string().trim().min(1).max(256).optional()
+}).strict().superRefine((value, ctx) => {
+  if (value.action === "CLAIM" && !value.serviceEventId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "serviceEventId is required for CLAIM", path: ["serviceEventId"] });
+  }
+  if (value.action === "VERIFY" && value.serviceEventId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "serviceEventId is only valid for CLAIM", path: ["serviceEventId"] });
+  }
+});
+
+const proofSchema = z.object({
+  scheme: z.literal("HMAC-SHA256-PILOT"),
+  challengeId: z.string().uuid(),
+  claimant: z.string().trim().min(1).max(256),
+  value: z.string().min(16).max(256)
+}).strict();
+
+const proofRequestSchema = z.object({
+  claimant: z.string().trim().min(1).max(256),
+  challengeToken: z.string().min(32).max(4096),
+  ownerProof: proofSchema
+}).strict();
+
+const claimSchema = proofRequestSchema.extend({
+  serviceEventId: z.string().trim().min(1).max(256),
   expectedVersion: z.number().int().positive()
 }).strict();
+
+const ownerSignSchema = z.object({ challengeToken: z.string().min(32).max(4096) }).strict();
 const statusSchema = z.object({
   status: z.enum(["ACTIVE", "SUSPENDED", "REVOKED"]),
   expectedVersion: z.number().int().positive()
@@ -37,6 +84,8 @@ export interface ApiOptions {
   webOrigins?: string[];
   demoEnabled?: boolean;
   demoSessionSecret?: string;
+  ownerProofChallengeSecret?: string;
+  ownerProofTtlSeconds?: number;
   secureDemoCookies?: boolean;
   credentials?: Partial<CredentialRegistry>;
 }
@@ -49,6 +98,15 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
     providers: options.credentials?.providers ?? {},
     owners: options.credentials?.owners ?? {}
   };
+  const pilotCredentialsConfigured = Object.keys(credentials.issuers).length > 0
+    || Object.keys(credentials.providers).length > 0
+    || Object.keys(credentials.owners).length > 0;
+  const configuredOwnerProofSecret = options.ownerProofChallengeSecret?.trim() ?? "";
+  if (process.env.NODE_ENV === "production" && pilotCredentialsConfigured && !configuredOwnerProofSecret) {
+    throw new Error("ownerProofChallengeSecret is required when production pilot credentials are configured");
+  }
+  const ownerProofSecret = configuredOwnerProofSecret || "skillpass-care-local-owner-proof-challenge-secret";
+  const ownerProofTtlSeconds = options.ownerProofTtlSeconds ?? 120;
 
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -82,7 +140,7 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
 
   app.get("/", (_req, res) => res.json({
     name: "SkillPass Care API",
-    version: "0.3.0",
+    version: "0.4.0",
     health: "/health/ready",
     demo: options.demoEnabled ? "/demo/state" : null
   }));
@@ -106,7 +164,12 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
       const health = await ledger.health();
       res.json({
         name: "SkillPass Care",
-        apiVersion: "0.3.0",
+        apiVersion: "0.4.0",
+        serviceRightSchemaVersion: 1,
+        ownerProof: "HMAC-SHA256-PILOT",
+        ownerProofTtlSeconds,
+        claimIdempotency: true,
+        scopedReads: true,
         demoEnabled: Boolean(options.demoEnabled),
         demoRoute: options.demoEnabled ? "/demo/state" : null,
         ledgerMode: health.mode,
@@ -116,33 +179,34 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
     } catch (err) { next(err); }
   });
 
-  // Production/pilot reads are credential-gated. The browser demo never uses these routes.
   app.get("/entitlements", async (req, res, next) => {
     try {
-      authenticateAny(req, ["issuer", "provider", "owner"], credentials);
-      res.json(await ledger.list());
+      const actor = authenticateAny(req, ["issuer", "provider", "owner"], credentials);
+      res.json(await ledger.list(actorFilter(actor.type, actor.id)));
     } catch (err) { next(err); }
   });
 
   app.get("/entitlements/:id", async (req, res, next) => {
     try {
-      authenticateAny(req, ["issuer", "provider", "owner"], credentials);
+      const actor = authenticateAny(req, ["issuer", "provider", "owner"], credentials);
       const right = await ledger.get(req.params.id);
-      if (!right) throw new SkillPassError("NOT_FOUND", "entitlement not found", 404);
+      if (!right || !canReadRight(actor.type, actor.id, right)) {
+        throw new SkillPassError("NOT_FOUND", "entitlement not found", 404);
+      }
       res.json(right);
     } catch (err) { next(err); }
   });
 
-  // Issuer-authenticated creation. issuerId comes from credentials, never JSON.
   app.post("/entitlements", async (req, res, next) => {
     try {
       const issuerId = authenticate(req, "issuer", credentials);
       const input = createSchema.parse(req.body);
-      res.status(201).json(await ledger.issue({ ...input, issuerId }));
+      const productCommitment = input.productCommitment ?? input.productHash!;
+      const { productHash: _legacy, ...rest } = input;
+      res.status(201).json(await ledger.issue({ ...rest, productCommitment, issuerId }));
     } catch (err) { next(err); }
   });
 
-  // Pilot shared-secret owner authentication. CKB mode must replace this with a wallet-signed transaction.
   app.post("/entitlements/:id/transfer", async (req, res, next) => {
     try {
       const owner = authenticate(req, "owner", credentials);
@@ -151,13 +215,66 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
     } catch (err) { next(err); }
   });
 
-  // Provider identity is authenticated at the server boundary and cannot be selected in JSON.
+  /** Provider creates a challenge; the claimant must prove possession before verify/claim. */
+  app.post("/entitlements/:id/challenges", async (req, res, next) => {
+    try {
+      const providerId = authenticate(req, "provider", credentials);
+      const body = challengeSchema.parse(req.body);
+      const right = await ledger.get(req.params.id);
+      if (!right || !right.acceptedProviderIds.includes(providerId)) {
+        throw new SkillPassError("NOT_FOUND", "entitlement not found", 404);
+      }
+      res.status(201).json(issueOwnerChallenge({
+        entitlementId: right.id,
+        providerId,
+        claimant: body.claimant,
+        action: body.action,
+        serviceEventId: body.serviceEventId,
+        secret: ownerProofSecret,
+        ttlSeconds: ownerProofTtlSeconds
+      }));
+    } catch (err) { next(err); }
+  });
+
+  /** Pilot signing surface. A real CKB client replaces this with local wallet signing. */
+  app.post("/owner-proof/sign", (req, res, next) => {
+    try {
+      const owner = authenticate(req, "owner", credentials);
+      const body = ownerSignSchema.parse(req.body);
+      const challenge = verifyChallengeToken(body.challengeToken, ownerProofSecret);
+      if (challenge.claimant !== owner) {
+        throw new SkillPassError("FORBIDDEN", "challenge claimant does not match authenticated owner", 403);
+      }
+      const ownerSecret = credentials.owners[owner];
+      res.json(createPilotOwnerProof(challenge, ownerSecret));
+    } catch (err) { next(err); }
+  });
+
   app.post("/entitlements/:id/verify", async (req, res, next) => {
     try {
       const providerId = authenticate(req, "provider", credentials);
-      const body = verifySchema.parse(req.body);
-      const verifier = new ProviderVerifier({ providerId, ledger });
-      res.json(await verifier.verify({ entitlementId: req.params.id, claimant: body.claimant }));
+      const body = proofRequestSchema.parse(req.body);
+      const challenge = requireOwnerProof({
+        entitlementId: req.params.id,
+        providerId,
+        claimant: body.claimant,
+        action: "VERIFY",
+        token: body.challengeToken,
+        proof: body.ownerProof,
+        ownerProofSecret,
+        credentials
+      });
+      const verifier = new ProviderVerifier({
+        providerId,
+        ledger,
+        evidenceSigner: createHmacEvidenceSigner(providerId, credentials.providers[providerId])
+      });
+      res.json(await verifier.verify({
+        entitlementId: req.params.id,
+        claimant: body.claimant,
+        challengeId: challenge.challengeId,
+        requestHash: ownerProofRequestHash(challenge)
+      }));
     } catch (err) { next(err); }
   });
 
@@ -165,11 +282,26 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
     try {
       const providerId = authenticate(req, "provider", credentials);
       const body = claimSchema.parse(req.body);
+      const challenge = requireOwnerProof({
+        entitlementId: req.params.id,
+        providerId,
+        claimant: body.claimant,
+        action: "CLAIM",
+        serviceEventId: body.serviceEventId,
+        token: body.challengeToken,
+        proof: body.ownerProof,
+        ownerProofSecret,
+        credentials
+      });
       res.json(await ledger.claim(
         req.params.id,
         body.claimant,
         providerId,
-        { expectedVersion: body.expectedVersion }
+        {
+          expectedVersion: body.expectedVersion,
+          serviceEventId: body.serviceEventId,
+          requestHash: claimRequestHash(challenge)
+        }
       ));
     } catch (err) { next(err); }
   });
@@ -190,9 +322,7 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
   }
 
   app.use((_req: Request, res: Response) => {
-    res.status(404).json({
-      error: { code: "NOT_FOUND", message: "route not found", requestId: res.locals.requestId }
-    });
+    res.status(404).json({ error: { code: "NOT_FOUND", message: "route not found", requestId: res.locals.requestId } });
   });
 
   app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -206,10 +336,13 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         }
       });
     }
-    if (err instanceof SkillPassError) {
-      return res.status(err.status).json({
-        error: { code: err.code, message: err.message, requestId: res.locals.requestId }
+    if (isJsonParseError(err)) {
+      return res.status(400).json({
+        error: { code: "VALIDATION_ERROR", message: "request body is not valid JSON", requestId: res.locals.requestId }
       });
+    }
+    if (err instanceof SkillPassError) {
+      return res.status(err.status).json({ error: { code: err.code, message: err.message, requestId: res.locals.requestId } });
     }
     console.error("[skillpass-api] unexpected error", { requestId: res.locals.requestId, err });
     return res.status(500).json({
@@ -218,4 +351,48 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
   });
 
   return app;
+}
+
+function actorFilter(type: ActorType, id: string) {
+  if (type === "issuer") return { issuerId: id };
+  if (type === "provider") return { providerId: id };
+  return { owner: id };
+}
+
+function canReadRight(type: ActorType, id: string, right: {
+  issuerId: string;
+  owner: string;
+  acceptedProviderIds: string[];
+}): boolean {
+  if (type === "issuer") return right.issuerId === id;
+  if (type === "provider") return right.acceptedProviderIds.includes(id);
+  return right.owner === id;
+}
+
+function requireOwnerProof(input: {
+  entitlementId: string;
+  providerId: string;
+  claimant: string;
+  action: "VERIFY" | "CLAIM";
+  serviceEventId?: string;
+  token: string;
+  proof: OwnerProof;
+  ownerProofSecret: string;
+  credentials: CredentialRegistry;
+}) {
+  const challenge = verifyChallengeToken(input.token, input.ownerProofSecret);
+  const matches = challenge.entitlementId === input.entitlementId
+    && challenge.providerId === input.providerId
+    && challenge.claimant === input.claimant
+    && challenge.action === input.action
+    && (challenge.serviceEventId ?? undefined) === (input.serviceEventId ?? undefined);
+  if (!matches) throw new SkillPassError("CHALLENGE_INVALID", "challenge is not bound to this request", 401);
+  const ownerSecret = input.credentials.owners[input.claimant];
+  if (!ownerSecret) throw new SkillPassError("OWNER_PROOF_REQUIRED", "claimant has no configured pilot owner credential", 401);
+  verifyPilotOwnerProof(challenge, input.proof, ownerSecret);
+  return challenge;
+}
+
+function isJsonParseError(err: unknown): boolean {
+  return Boolean(err && typeof err === "object" && (err as { type?: string }).type === "entity.parse.failed");
 }

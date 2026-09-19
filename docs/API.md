@@ -1,61 +1,47 @@
-# API Reference
+# API Reference — v0.4
 
-Local API base URL: `http://localhost:8787`.
+Local base URL: `http://localhost:8787`. Same-origin web/Vercel base URL: `/api`.
 
-Browser/Vercel base URL: `/api` on the same deployment origin.
+All API responses include `x-request-id`. Errors use a stable envelope:
 
-All API responses include `x-request-id`. Errors use:
+```json
+{"error":{"code":"VERSION_CONFLICT","message":"...","requestId":"..."}}
+```
+
+## Actor credentials
+
+```text
+Issuer:   x-issuer-id / x-issuer-key
+Provider: x-provider-id / x-provider-key
+Owner:    x-owner-id / x-owner-key
+```
+
+These shared secrets are a controlled-pilot mechanism, not the target CKB identity model.
+
+## Health / metadata
+
+- `GET /health/live` — function/process liveness.
+- `GET /health/ready` — ledger readiness; CKB mode remains `503` until implemented.
+- `GET /health` — readiness alias.
+- `GET /meta` — non-secret capabilities, schema version and owner-proof mode.
+
+## Scoped reads
+
+`GET /entitlements` and `GET /entitlements/:id` require valid actor credentials and are filtered by actor:
+
+- issuer → rights where `issuerId` matches;
+- owner → rights where current `owner` matches;
+- provider → rights whose `acceptedProviderIds` contains that provider.
+
+Unauthorized detail access returns `404` to reduce identifier enumeration.
+
+## Issue
+
+`POST /entitlements` with issuer credentials:
 
 ```json
 {
-  "error": {
-    "code": "VERSION_CONFLICT",
-    "message": "stale entitlement version: expected 1, current 2",
-    "requestId": "..."
-  }
-}
-```
-
-## Health and metadata
-
-### `GET /health/live`
-Process/function liveness only.
-
-### `GET /health/ready`
-Returns ledger readiness. Memory mode is ready for demo/local pilot behavior. CKB mode deliberately returns `503` until the real SkillPass Cell adapter exists.
-
-### `GET /health`
-Alias for readiness.
-
-### `GET /meta`
-Returns non-secret deployment capabilities such as API version, demo enablement, ledger mode and CKB implementation status.
-
-## Credential-protected reads
-
-`GET /entitlements` and `GET /entitlements/:id` require any valid configured issuer, provider or owner credential. They are not public discovery endpoints.
-
-Supported actor headers are:
-
-```text
-x-issuer-id / x-issuer-key
-x-provider-id / x-provider-key
-x-owner-id / x-owner-key
-```
-
-## Authenticated issuer routes
-
-Headers:
-
-```text
-x-issuer-id: seller-demo
-x-issuer-key: <server-configured secret>
-```
-
-### `POST /entitlements`
-
-```json
-{
-  "productHash": "sha256:device-001:salted-commitment",
+  "productCommitment": "sha256:...",
   "owner": "alice",
   "serviceClass": "STANDARD_90D",
   "remainingClaims": 3,
@@ -65,72 +51,98 @@ x-issuer-key: <server-configured secret>
 }
 ```
 
-`issuerId` comes from authenticated credentials and cannot be selected in JSON.
+`issuerId` comes only from authenticated credentials. `productHash` is temporarily accepted as a deprecated v0.3 alias for `productCommitment`.
 
-### `PATCH /entitlements/:id/status`
+## Transfer
+
+`POST /entitlements/:id/transfer` with current-owner credentials:
+
+```json
+{"to":"bob","expectedVersion":1}
+```
+
+The transfer source is the authenticated owner. Stale state returns `409 VERSION_CONFLICT`.
+
+## Owner proof flow for provider verification / claim
+
+A provider cannot authorize a bare `{ "claimant": "bob" }` assertion.
+
+### 1. Provider creates a challenge
+
+`POST /entitlements/:id/challenges` with provider credentials.
+
+Verification:
+
+```json
+{"claimant":"bob","action":"VERIFY"}
+```
+
+Claim:
+
+```json
+{"claimant":"bob","action":"CLAIM","serviceEventId":"repair-job-001"}
+```
+
+The returned signed challenge binds entitlement, provider, claimant, action, expiry and optional service event.
+
+### 2. Pilot owner produces proof
+
+`POST /owner-proof/sign` with owner credentials:
+
+```json
+{"challengeToken":"<token from step 1>"}
+```
+
+This produces `HMAC-SHA256-PILOT` proof. It exists only to exercise proof-of-possession semantics before wallet signing is implemented.
+
+### 3a. Verify
+
+`POST /entitlements/:id/verify` with provider credentials:
 
 ```json
 {
-  "status": "SUSPENDED",
-  "expectedVersion": 2
+  "claimant":"bob",
+  "challengeToken":"...",
+  "ownerProof":{
+    "scheme":"HMAC-SHA256-PILOT",
+    "challengeId":"...",
+    "claimant":"bob",
+    "value":"..."
+  }
 }
 ```
 
-`expectedVersion` is required. Allowed status values are `ACTIVE`, `SUSPENDED`, and `REVOKED`. Revocation is irreversible in the memory pilot.
+The provider verifier still resolves the latest entitlement state after proof validation. A proof created before a transfer therefore does not make the previous owner eligible.
 
-## Authenticated owner transfer
+### 3b. Claim
 
-Headers:
-
-```text
-x-owner-id: alice
-x-owner-key: <server-configured secret>
-```
-
-### `POST /entitlements/:id/transfer`
+`POST /entitlements/:id/claim`:
 
 ```json
 {
-  "to": "bob",
-  "expectedVersion": 1
+  "claimant":"bob",
+  "serviceEventId":"repair-job-001",
+  "expectedVersion":2,
+  "challengeToken":"...",
+  "ownerProof":{ "scheme":"HMAC-SHA256-PILOT", "challengeId":"...", "claimant":"bob", "value":"..." }
 }
 ```
 
-The transfer source comes from the authenticated owner identity, not a caller-supplied `from` field. `expectedVersion` is required and a stale version returns `409 VERSION_CONFLICT`.
+`serviceEventId` is idempotent per provider. Retrying the exact same request returns the original result instead of consuming another claim. Reusing the same event ID for a different bound request returns `409 IDEMPOTENCY_CONFLICT`.
 
-## Authenticated provider routes
+## Status
 
-Headers:
-
-```text
-x-provider-id: repair-a
-x-provider-key: <server-configured secret>
-```
-
-### `POST /entitlements/:id/verify`
+`PATCH /entitlements/:id/status` with issuer credentials:
 
 ```json
-{
-  "claimant": "bob"
-}
+{"status":"SUSPENDED","expectedVersion":2}
 ```
 
-The response includes provider ID, claimant, entitlement version, verification result/reason and timestamp.
+Revocation is irreversible in the current transition model.
 
-### `POST /entitlements/:id/claim`
+## Public demo
 
-```json
-{
-  "claimant": "bob",
-  "expectedVersion": 2
-}
-```
-
-`expectedVersion` is required.
-
-## Public demo routes
-
-Available only when `ENABLE_DEMO_ENDPOINTS=true`:
+When `ENABLE_DEMO_ENDPOINTS=true`:
 
 ```text
 GET  /demo/state
@@ -140,6 +152,4 @@ POST /demo/entitlements/:id/verify
 POST /demo/entitlements/:id/claim
 ```
 
-The demo uses a signed, HttpOnly browser-session cookie instead of process memory. It intentionally allows named Alice/Bob/provider simulation and is **not an ownership-security boundary**.
-
-Demo mutation requests also include `expectedVersion` so the showcase exercises the same optimistic transition semantics as the authenticated API.
+These routes intentionally simulate named actors and are not an ownership-security boundary.

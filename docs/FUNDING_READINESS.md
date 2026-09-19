@@ -7,10 +7,15 @@ This file prevents technical progress from being confused with market evidence.
 - [x] local transfer lifecycle
 - [x] provider-independent verifier interface
 - [x] stale-owner rejection test
+- [x] claimant proof-of-possession semantics
+- [x] replay-safe claim idempotency
+- [x] actor-scoped read authorization
+- [x] versioned CKB Cell-data boundary
 - [x] reviewer documentation
 - [ ] real CKB testnet adapter
 - [ ] signed provider manifests
-- [ ] durable authorization audit evidence
+- [x] signed pilot authorization evidence
+- [ ] asymmetric/durable production authorization evidence
 
 ## Market evidence
 

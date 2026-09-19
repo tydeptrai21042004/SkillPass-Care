@@ -1,82 +1,62 @@
 # Architecture
 
-## Core authorization invariant
+## Authorization invariant
 
-For provider `p`, claimant `u` and entitlement `e`, authorization succeeds only when:
+For entitlement `e`, provider `p` and claimant `u`, service authorization succeeds only if:
 
 ```text
-entitlement exists
+live entitlement exists
 AND status == ACTIVE
 AND not expired
 AND current owner == u
-AND p is accepted by entitlement policy
+AND p is accepted
 AND remainingClaims > 0
+AND claimant proof is bound to this provider/entitlement/action
 ```
 
-After a transfer, providers resolving the same current state must reject the previous holder and may accept the new holder when all other policy conditions hold.
+The first six checks live in the pure domain policy. Proof-of-possession is verified at the API/provider boundary because its mechanism changes from pilot HMAC to wallet signature in CKB mode.
 
-## Deployment layers
+## Pilot request flow
 
 ```text
-Browser
-  │
-  ├── Product/reviewer UI (Vite static output)
-  │
-  └── /api/*
-        │
-        ├── /demo/*  → signed browser-session state (public showcase)
-        │
-        └── authenticated API
-              │
-              └── ServiceRightLedger
-                    ├── InMemoryLedger (local/single-process pilot)
-                    └── CkbLedgerAdapter (currently fail-closed)
+Provider                    API                      Owner
+   │                         │                         │
+   ├─ create challenge ─────>│                         │
+   │<─ signed challenge ─────┤                         │
+   │                         │                         │
+   │                  challenge token ────────────────>│
+   │                         │<──── owner proof ───────┤
+   │                         │                         │
+   ├─ verify/claim + proof ─>│                         │
+   │                         ├─ verify proof           │
+   │                         ├─ resolve latest state   │
+   │                         ├─ evaluate policy        │
+   │<─ decision/evidence ────┤                         │
 ```
 
-The public demo does not use process memory for lifecycle state. That makes it deterministic across serverless function instances while keeping it clearly non-authoritative.
+For claims the challenge also binds `serviceEventId`; the ledger binds that event to the request hash for replay-safe retries.
 
-## Shared transition logic
+## State and schema versions
 
-`packages/core/src/transitions.ts` owns transfer, claim, and status transition rules. Both the memory ledger and public demo route layer call these functions, reducing semantic drift between the showcase and API behavior.
+- `schemaVersion` — protocol/data-layout version; currently `1`.
+- `version` — mutable entitlement revision used by the off-chain pilot for optimistic concurrency.
 
-## Optimistic mutation rule
+Real CKB concurrency is ultimately enforced by consuming the exact live input Cell rather than by trusting the JavaScript version counter.
 
-Authenticated HTTP mutations require `expectedVersion`:
+## CKB mapping
 
 ```text
-client observed version N
-        ↓
-mutation requires version N
-        ↓
-state is still N → commit N+1
-state already changed → 409 VERSION_CONFLICT
+ServiceRight.id          stable entitlement/type-script identity
+owner                    live Cell lock script (authoritative)
+other state              versioned Cell data
+transfer                 consume current Cell -> create successor Cell
+verification             resolve exactly one canonical live Cell
+owner proof              signature by the key controlling current owner lock
+claim                    atomic Cell transition or explicitly durable receipt model
 ```
 
-Real CKB atomicity ultimately comes from Cell consumption, not from this JavaScript version field.
+The V1 Cell-data representation intentionally excludes `owner` so serialized data cannot disagree with the lock script.
 
-## Trust boundaries
+## Physical-product boundary
 
-```text
-Issuer backend ── authenticated issuer identity ──┐
-                                                  │
-Owner/client ─── authenticated pilot owner ───────┼── API ── Ledger
-                                                  │
-Provider A ───── authenticated provider A ─────────┤
-Provider B ───── authenticated provider B ─────────┘
-```
-
-The `/demo/*` routes are a separate non-authoritative boundary. They intentionally simulate actors and store state in a signed browser session.
-
-## CKB production mapping
-
-```text
-ServiceRight.id      -> stable type-script / entitlement identity
-owner                -> current live Cell lock script
-state/policy         -> versioned Cell data and/or committed policy hash
-issue                -> wallet/issuer signed creation transaction
-transfer             -> consume current Cell + create successor owned by recipient
-get                   -> resolve exactly one canonical live Cell
-claim                 -> explicitly defined atomic on-chain transition OR durable receipt model
-```
-
-The current `CkbLedgerAdapter` does not invent these operations. It reports RPC diagnostics and remains not-ready until the protocol implementation exists.
+For ordinary second-hand goods, SkillPass can prove who controls the service right, not whether the physical product changed hands. The sale workflow must transfer the entitlement alongside the product. If a product is itself represented by a CKB asset, a future transaction can atomically consume both product and service-right Cells.

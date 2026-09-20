@@ -1,4 +1,4 @@
-import type { AuthorizationDecision, VerificationRequest } from "@skillpass/shared";
+import type { AuthorizationDecision, VerificationRequest } from "@skillpass-care/shared";
 import type { ServiceRight } from "./model.js";
 
 /** Pure authorization policy with no storage/network side effects. */

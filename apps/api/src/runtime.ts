@@ -1,7 +1,7 @@
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
-import { CkbLedgerAdapter, InMemoryLedger, type ServiceRightLedger } from "@skillpass/ckb-adapter";
-import { loadConfig } from "@skillpass/config";
+import { CkbLedgerAdapter, InMemoryLedger, type ServiceRightLedger } from "@skillpass-care/ckb-adapter";
+import { loadConfig } from "@skillpass-care/config";
 import { createApp } from "./app.js";
 
 let cachedApp: ReturnType<typeof createApp> | undefined;

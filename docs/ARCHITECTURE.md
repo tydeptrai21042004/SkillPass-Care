@@ -1,22 +1,78 @@
 # Architecture
 
-## Authorization invariant
-
-For entitlement `e`, provider `p` and claimant `u`, service authorization succeeds only if:
+SkillPass Care deliberately has **two state layers**. This is the central design rule for the funding pilot.
 
 ```text
-live entitlement exists
+CKB / SkillPass ownership layer
+  ├─ capability identity
+  ├─ current owner / live state reference
+  ├─ transfer
+  ├─ owner proof
+  └─ provider authorization evidence
+          │
+          ▼
+SkillPass Care application layer
+  ├─ product commitment
+  ├─ Care plan / service class
+  ├─ coverage units remaining
+  ├─ service-event history
+  ├─ accepted-provider policy
+  ├─ suspend / resume / revoke
+  └─ issuer / owner / provider workflow
+```
+
+SkillPass answers **who controls the portable right**. Care answers **what coverage remains and what service has happened**.
+
+## Composite authorization invariant
+
+For entitlement `e`, provider `p`, claimant `u`, requested service `s`, and units `q`, Care authorizes service only if:
+
+```text
+latest entitlement exists
 AND status == ACTIVE
 AND not expired
 AND current owner == u
 AND p is accepted
-AND remainingClaims > 0
-AND claimant proof is bound to this provider/entitlement/action
+AND remaining coverage >= q
+AND Care plan allows s
+AND owner proof binds e + p + u + s + q + serviceEventId
 ```
 
-The first six checks live in the pure domain policy. Proof-of-possession is verified at the API/provider boundary because its mechanism changes from pilot HMAC to wallet signature in CKB mode.
+In the memory pilot the owner is stored inside the local `ServiceRight`. In the target SkillPass integration the owner MUST come from the authoritative live SkillPass/CKB state. Care must never promote a cached application owner field above the chain-derived owner.
 
-## Pilot request flow
+## Service continuity invariant
+
+Ownership and coverage are independent transitions.
+
+Ownership transfer:
+
+```text
+owner: Alice -> Bob
+remaining coverage: unchanged
+service history: unchanged
+```
+
+Service consumption:
+
+```text
+owner: unchanged
+remaining coverage: decreases by the authorized units
+service history: append one ServiceEventRecord
+```
+
+This is what enables the flagship flow:
+
+```text
+Alice owns 3 units
+  -> Provider A diagnostic
+Alice owns 2 units
+  -> transfer to Bob
+Bob owns 2 units
+  -> Provider B repair
+Bob owns 1 unit
+```
+
+## Provider request flow
 
 ```text
 Provider                    API                      Owner
@@ -27,36 +83,39 @@ Provider                    API                      Owner
    │                  challenge token ────────────────>│
    │                         │<──── owner proof ───────┤
    │                         │                         │
-   ├─ verify/claim + proof ─>│                         │
+   ├─ service event + proof >│                         │
    │                         ├─ verify proof           │
-   │                         ├─ resolve latest state   │
-   │                         ├─ evaluate policy        │
-   │<─ decision/evidence ────┤                         │
+   │                         ├─ resolve latest owner   │
+   │                         ├─ verify Care policy     │
+   │                         ├─ atomically consume q   │
+   │                         ├─ append service event   │
+   │<─ state + event ────────┤                         │
 ```
 
-For claims the challenge also binds `serviceEventId`; the ledger binds that event to the request hash for replay-safe retries.
-
-## State and schema versions
-
-- `schemaVersion` — protocol/data-layout version; currently `1`.
-- `version` — mutable entitlement revision used by the off-chain pilot for optimistic concurrency.
-
-Real CKB concurrency is ultimately enforced by consuming the exact live input Cell rather than by trusting the JavaScript version counter.
-
-## CKB mapping
+For a service event, the owner challenge binds:
 
 ```text
-ServiceRight.id          stable entitlement/type-script identity
-owner                    live Cell lock script (authoritative)
-other state              versioned Cell data
-transfer                 consume current Cell -> create successor Cell
-verification             resolve exactly one canonical live Cell
-owner proof              signature by the key controlling current owner lock
-claim                    atomic Cell transition or explicitly durable receipt model
+entitlementId
+providerId
+claimant
+serviceEventId
+serviceType
+unitsConsumed
+expiry
 ```
 
-The V1 Cell-data representation intentionally excludes `owner` so serialized data cannot disagree with the lock script.
+Changing the requested service or quantity after owner approval invalidates the challenge.
+
+## Idempotency and concurrency
+
+`providerId + serviceEventId` is the idempotency key. The key is also bound to the canonical request hash. Exact retries return the original committed result; reusing the same event identifier for a different request returns `409 IDEMPOTENCY_CONFLICT`.
+
+Every mutable pilot operation also uses `expectedVersion`. This prevents two providers from independently consuming the same final coverage unit in the in-memory model. In a durable Care store this becomes a transaction/compare-and-swap boundary. In the SkillPass ownership layer, transfer freshness ultimately comes from consuming the exact live CKB Cell.
+
+## Privacy boundary
+
+Do not put customer PII or detailed repair notes into the portable SkillPass ownership object. The public/portable layer should carry only what is needed to identify and verify the service right, such as product and policy commitments. Care-specific service details belong in the Care data layer and should be actor-scoped.
 
 ## Physical-product boundary
 
-For ordinary second-hand goods, SkillPass can prove who controls the service right, not whether the physical product changed hands. The sale workflow must transfer the entitlement alongside the product. If a product is itself represented by a CKB asset, a future transaction can atomically consume both product and service-right Cells.
+For an ordinary physical product, neither Care nor SkillPass independently proves that the physical item changed hands. The pilot coordinates the service-right transfer with the product sale. A future CKB-native product asset may support atomic product + service-right transfer, but that is not required for this funding scope.

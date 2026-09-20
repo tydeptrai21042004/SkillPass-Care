@@ -5,6 +5,9 @@
 | Provider submits `claimant=bob` without Bob | Bound owner challenge + proof required | Pilot HMAC is server-known; replace with wallet signature |
 | Proof reused at another provider | Challenge binds provider ID | Read-only verify can replay at same provider until TTL |
 | Proof reused for another entitlement/action | Challenge binds entitlement + action | None within signed-token assumptions |
+| Provider changes approved service type or units | CLAIM challenge binds `serviceType` + `unitsConsumed` | Requires wallet signing in production for owner-held proof |
+| Service commits after ownership transfer | latest state rechecked; stale owner rejected | Real deployment depends on canonical SkillPass live-state freshness |
+| Provider reads another provider's service history | provider-scoped service-event reads | issuer/current owner can see transferable history by design |
 | Claim HTTP retry consumes twice | `providerId + serviceEventId` idempotency + request-hash binding | In-memory idempotency is not cross-process durable |
 | Two stale mutations race | required `expectedVersion` | Memory implementation is single-process only |
 | Previous owner uses old proof after transfer | latest state resolved at decision time | Requires trustworthy live-state backend |

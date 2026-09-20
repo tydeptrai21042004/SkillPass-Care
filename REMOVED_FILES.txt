@@ -1,4 +1,2 @@
-DELETE_FILES.txt
 api/[...path].ts
 api/index.ts
-apply-fix.sh

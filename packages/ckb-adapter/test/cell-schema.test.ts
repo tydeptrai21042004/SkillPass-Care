@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decodeCkbServiceRightData, encodeCkbServiceRightData, toCkbServiceRightData } from "../src/index.js";
-import type { ServiceRight } from "@skillpass/core";
+import type { ServiceRight } from "@skillpass-care/core";
 
 const right: ServiceRight = {
   schemaVersion: 1,

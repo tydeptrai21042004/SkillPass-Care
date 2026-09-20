@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SkillPassError } from "@skillpass/shared";
+import { SkillPassError } from "@skillpass-care/shared";
 import {
   claimRequestHash,
   createPilotOwnerProof,
@@ -86,6 +86,27 @@ describe("owner proof", () => {
     expect(first.challengeId).not.toBe(second.challengeId);
     expect(ownerProofRequestHash(first)).not.toBe(ownerProofRequestHash(second));
     expect(claimRequestHash(first)).toBe(claimRequestHash(second));
+  });
+
+  it("binds Care service type and units into CLAIM proof and idempotency hashes", () => {
+    const base = {
+      entitlementId: "ent-1",
+      providerId: "repair-a",
+      claimant: "alice",
+      action: "CLAIM" as const,
+      serviceEventId: "svc-typed-1",
+      secret: CHALLENGE_SECRET,
+      ttlSeconds: 120,
+      now: new Date("2026-09-20T00:00:00.000Z")
+    };
+    const diagnostic = issueOwnerChallenge({ ...base, serviceType: "DIAGNOSTIC", unitsConsumed: 1 });
+    const repair = issueOwnerChallenge({ ...base, serviceType: "REPAIR", unitsConsumed: 1 });
+    const twoUnits = issueOwnerChallenge({ ...base, serviceType: "DIAGNOSTIC", unitsConsumed: 2 });
+
+    expect(diagnostic.message).toContain("serviceType=DIAGNOSTIC");
+    expect(diagnostic.message).toContain("unitsConsumed=1");
+    expect(claimRequestHash(diagnostic)).not.toBe(claimRequestHash(repair));
+    expect(claimRequestHash(diagnostic)).not.toBe(claimRequestHash(twoUnits));
   });
 
   it("requires serviceEventId only for claim challenges", () => {

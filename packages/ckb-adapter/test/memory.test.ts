@@ -7,11 +7,13 @@ async function demo() {
   return { ledger, right };
 }
 
-const claimOptions = (expectedVersion: number, serviceEventId: string, requestHash = `sha256:${"a".repeat(64)}`) => ({
-  expectedVersion,
-  serviceEventId,
-  requestHash
-});
+const claimOptions = (
+  expectedVersion: number,
+  serviceEventId: string,
+  requestHash = `sha256:${"a".repeat(64)}`,
+  serviceType: "DIAGNOSTIC" | "INSPECTION" | "REPAIR" | "REPLACEMENT" | "BATTERY_REPLACEMENT" = "REPAIR",
+  unitsConsumed = 1
+) => ({ expectedVersion, serviceEventId, requestHash, serviceType, unitsConsumed });
 
 describe("InMemoryLedger", () => {
   it("moves ownership and enforces mandatory optimistic versioning", async () => {
@@ -75,6 +77,51 @@ describe("InMemoryLedger", () => {
     ]);
     expect(results.filter((x) => x.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((x) => x.status === "rejected")).toHaveLength(1);
+  });
+
+  it("keeps auditable service history across owner and provider changes", async () => {
+    const { ledger, right } = await demo();
+    const afterAlice = await ledger.claim(
+      right.id, "alice", "repair-a",
+      claimOptions(1, "diag-alice", `sha256:${"1".repeat(64)}`, "DIAGNOSTIC", 1)
+    );
+    expect(afterAlice.remainingClaims).toBe(2);
+    await ledger.transfer(right.id, "alice", "bob", { expectedVersion: 2 });
+    const afterBob = await ledger.claim(
+      right.id, "bob", "repair-b",
+      claimOptions(3, "repair-bob", `sha256:${"2".repeat(64)}`, "REPAIR", 1)
+    );
+    expect(afterBob.remainingClaims).toBe(1);
+
+    const history = await ledger.listServiceEvents(right.id);
+    expect(history).toHaveLength(2);
+    expect(history[0]).toMatchObject({
+      eventId: "diag-alice", providerId: "repair-a", claimant: "alice",
+      serviceType: "DIAGNOSTIC", entitlementVersionBefore: 1, entitlementVersionAfter: 2, remainingClaimsAfter: 2
+    });
+    expect(history[1]).toMatchObject({
+      eventId: "repair-bob", providerId: "repair-b", claimant: "bob",
+      serviceType: "REPAIR", entitlementVersionBefore: 3, entitlementVersionAfter: 4, remainingClaimsAfter: 1
+    });
+    expect(await ledger.listServiceEvents(right.id, { providerId: "repair-a" })).toHaveLength(1);
+  });
+
+  it("enforces Care-plan service types and multi-unit coverage", async () => {
+    const { ledger, right } = await demo();
+    await expect(ledger.claim(
+      right.id, "alice", "repair-a",
+      claimOptions(1, "battery-not-covered", `sha256:${"3".repeat(64)}`, "BATTERY_REPLACEMENT", 1)
+    )).rejects.toThrow("not covered");
+
+    const two = await ledger.claim(
+      right.id, "alice", "repair-a",
+      claimOptions(1, "two-unit-repair", `sha256:${"4".repeat(64)}`, "REPAIR", 2)
+    );
+    expect(two.remainingClaims).toBe(1);
+    await expect(ledger.claim(
+      right.id, "alice", "repair-a",
+      claimOptions(2, "too-many", `sha256:${"5".repeat(64)}`, "REPAIR", 2)
+    )).rejects.toThrow("insufficient remaining coverage");
   });
 
   it("supports suspension and irreversible revocation", async () => {

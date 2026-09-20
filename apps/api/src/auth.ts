@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { Request } from "express";
-import { SkillPassError } from "@skillpass/shared";
+import { SkillPassError } from "@skillpass-care/shared";
 
 export interface CredentialRegistry {
   issuers: Record<string, string>;

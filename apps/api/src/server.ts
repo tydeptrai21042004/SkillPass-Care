@@ -1,4 +1,4 @@
-import { loadConfig } from "@skillpass/config";
+import { loadConfig } from "@skillpass-care/config";
 import { getRuntimeApp } from "./runtime.js";
 
 const app = getRuntimeApp();

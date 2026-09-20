@@ -1,4 +1,4 @@
-# Correction Summary — v0.4.0
+# Correction Summary — v0.5.0
 
 ## Protocol/security
 

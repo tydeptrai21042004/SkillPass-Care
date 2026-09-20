@@ -1,4 +1,4 @@
-import { SkillPassError } from "@skillpass/shared";
+import { SkillPassError } from "@skillpass-care/shared";
 
 /**
  * Enforces the protocol invariant that an entitlement identity resolves to at

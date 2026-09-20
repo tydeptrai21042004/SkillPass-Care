@@ -1,35 +1,44 @@
 # Provider Integration
 
-A provider should be able to verify a service right without reading the issuer's customer database.
+SkillPass Care providers combine two decisions:
 
-## Required production behavior
+```text
+SkillPass / ownership decision
+  current owner + fresh state + proof
 
-1. Provider identity is locally configured/authenticated.
-2. Provider requests an owner challenge bound to itself and the entitlement.
-3. Current owner signs the canonical challenge (pilot: HMAC; target: wallet key).
-4. Provider verifies proof and resolves the latest entitlement state.
-5. Provider evaluates status, expiry, owner, provider policy and remaining claims.
-6. Provider records signed authorization evidence.
-7. A service consumption uses a stable `serviceEventId`; retries reuse the same ID.
-8. Any inability to resolve authoritative state fails closed.
+AND
 
-## Provider SDK
-
-`ProviderVerifier` intentionally owns only the state-verification/evidence layer. The HTTP API currently performs pilot challenge verification before invoking it. In the CKB target, a provider deployment should combine the SDK with wallet-signature verification and canonical live-Cell resolution.
-
-```ts
-const verifier = new ProviderVerifier({
-  providerId: "repair-shop-a",
-  ledger,
-  evidenceSigner
-});
-
-const evidence = await verifier.verify({
-  entitlementId: "ent-123",
-  claimant: "ckt1...owner",
-  challengeId: "...",
-  requestHash: "sha256:..."
-});
+Care application decision
+  active coverage + accepted provider + allowed service + enough units
 ```
 
-Do not treat a bare claimant string as identity proof.
+A provider must not maintain an authoritative duplicate owner table.
+
+## Service workflow
+
+1. Identify the Care entitlement.
+2. Request a short-lived owner challenge.
+3. For service, bind `serviceEventId`, `serviceType` and `unitsConsumed`.
+4. Obtain owner proof.
+5. Resolve the latest ownership/coverage state.
+6. Verify provider acceptance and Care plan policy.
+7. Atomically record the service event and consume the requested units.
+8. Keep signed authorization/service evidence.
+
+## Idempotency
+
+Use a stable provider-side event ID, for example:
+
+```text
+repair-order-2026-000123
+```
+
+Retries use the same event ID and same canonical request. Reusing that ID for a changed claimant, service type, unit count or request hash is a conflict.
+
+## Service history privacy
+
+Providers see only their own service-event history through the scoped API. The current owner and issuer can see the transferable event history required to understand remaining coverage. Do not place private technician notes, billing data or customer PII into the transferable record.
+
+## Target SkillPass integration
+
+When the main SkillPass testnet integration is connected, the provider verifier should use the canonical SkillPass owner/state reference while Care continues to enforce plan/quota/service-event rules. See `SKILLPASS_INTEGRATION.md`.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
-import { InMemoryLedger } from "@skillpass/ckb-adapter";
-import { verifyHmacAuthorizationEvidence } from "@skillpass/provider-sdk";
+import { InMemoryLedger } from "@skillpass-care/ckb-adapter";
+import { verifyHmacAuthorizationEvidence } from "@skillpass-care/provider-sdk";
 import { createApp } from "../src/app.js";
 
 const credentials = {
@@ -33,12 +33,20 @@ async function createProof(input: {
   ownerKey: string;
   action: "VERIFY" | "CLAIM";
   serviceEventId?: string;
+  serviceType?: "DIAGNOSTIC" | "INSPECTION" | "REPAIR" | "REPLACEMENT" | "BATTERY_REPLACEMENT";
+  unitsConsumed?: number;
 }) {
   const challengeResponse = await request(input.app)
     .post(`/entitlements/${input.entitlementId}/challenges`)
     .set("x-provider-id", input.providerId)
     .set("x-provider-key", input.providerKey)
-    .send({ claimant: input.claimant, action: input.action, serviceEventId: input.serviceEventId })
+    .send({
+      claimant: input.claimant,
+      action: input.action,
+      serviceEventId: input.serviceEventId,
+      serviceType: input.serviceType,
+      unitsConsumed: input.unitsConsumed
+    })
     .expect(201);
 
   const proofResponse = await request(input.app)
@@ -250,6 +258,89 @@ describe("API", () => {
     expect(conflict.body.error.code).toBe("IDEMPOTENCY_CONFLICT");
   });
 
+  it("preserves Care coverage across transfer and provider changes", async () => {
+    const { right, app } = await setup();
+
+    const alice = await createProof({
+      app, entitlementId: right.id, providerId: "repair-a", providerKey: "provider-a-secret",
+      claimant: "alice", ownerKey: "alice-secret-long", action: "CLAIM", serviceEventId: "diag-alice-001",
+      serviceType: "DIAGNOSTIC", unitsConsumed: 1
+    });
+    const aliceEvent = await request(app).post(`/entitlements/${right.id}/service-events`)
+      .set("x-provider-id", "repair-a").set("x-provider-key", "provider-a-secret")
+      .send({
+        claimant: "alice", serviceEventId: "diag-alice-001", serviceType: "DIAGNOSTIC", unitsConsumed: 1,
+        expectedVersion: 1, challengeToken: alice.challenge.token, ownerProof: alice.proof
+      }).expect(201);
+    expect(aliceEvent.body.entitlement.remainingClaims).toBe(2);
+    expect(aliceEvent.body.event.providerId).toBe("repair-a");
+
+    await request(app).post(`/entitlements/${right.id}/transfer`)
+      .set("x-owner-id", "alice").set("x-owner-key", "alice-secret-long")
+      .send({ to: "bob", expectedVersion: 2 }).expect(200);
+
+    const bob = await createProof({
+      app, entitlementId: right.id, providerId: "repair-b", providerKey: "provider-b-secret",
+      claimant: "bob", ownerKey: "bob-secret-long", action: "CLAIM", serviceEventId: "repair-bob-001",
+      serviceType: "REPAIR", unitsConsumed: 1
+    });
+    const bobEvent = await request(app).post(`/entitlements/${right.id}/service-events`)
+      .set("x-provider-id", "repair-b").set("x-provider-key", "provider-b-secret")
+      .send({
+        claimant: "bob", serviceEventId: "repair-bob-001", serviceType: "REPAIR", unitsConsumed: 1,
+        expectedVersion: 3, challengeToken: bob.challenge.token, ownerProof: bob.proof
+      }).expect(201);
+    expect(bobEvent.body.entitlement.owner).toBe("bob");
+    expect(bobEvent.body.entitlement.remainingClaims).toBe(1);
+
+    const history = await request(app).get(`/entitlements/${right.id}/service-events`)
+      .set("x-owner-id", "bob").set("x-owner-key", "bob-secret-long").expect(200);
+    expect(history.body).toHaveLength(2);
+    expect(history.body.map((event: { providerId: string }) => event.providerId)).toEqual(["repair-a", "repair-b"]);
+
+    const providerAHistory = await request(app).get(`/entitlements/${right.id}/service-events`)
+      .set("x-provider-id", "repair-a").set("x-provider-key", "provider-a-secret").expect(200);
+    expect(providerAHistory.body).toHaveLength(1);
+    expect(providerAHistory.body[0].providerId).toBe("repair-a");
+  });
+
+  it("rejects a pre-transfer service proof after ownership changes", async () => {
+    const { right, app } = await setup();
+    const stale = await createProof({
+      app, entitlementId: right.id, providerId: "repair-a", providerKey: "provider-a-secret",
+      claimant: "alice", ownerKey: "alice-secret-long", action: "CLAIM", serviceEventId: "stale-service-001",
+      serviceType: "REPAIR", unitsConsumed: 1
+    });
+
+    await request(app).post(`/entitlements/${right.id}/transfer`)
+      .set("x-owner-id", "alice").set("x-owner-key", "alice-secret-long")
+      .send({ to: "bob", expectedVersion: 1 }).expect(200);
+
+    const response = await request(app).post(`/entitlements/${right.id}/service-events`)
+      .set("x-provider-id", "repair-a").set("x-provider-key", "provider-a-secret")
+      .send({
+        claimant: "alice", serviceEventId: "stale-service-001", serviceType: "REPAIR", unitsConsumed: 1,
+        expectedVersion: 2, challengeToken: stale.challenge.token, ownerProof: stale.proof
+      }).expect(403);
+    expect(response.body.error.message).toContain("WRONG_OWNER");
+  });
+
+  it("binds service type and units into the owner-approved request", async () => {
+    const { right, app } = await setup();
+    const proof = await createProof({
+      app, entitlementId: right.id, providerId: "repair-a", providerKey: "provider-a-secret",
+      claimant: "alice", ownerKey: "alice-secret-long", action: "CLAIM", serviceEventId: "bound-service-001",
+      serviceType: "DIAGNOSTIC", unitsConsumed: 1
+    });
+    const response = await request(app).post(`/entitlements/${right.id}/service-events`)
+      .set("x-provider-id", "repair-a").set("x-provider-key", "provider-a-secret")
+      .send({
+        claimant: "alice", serviceEventId: "bound-service-001", serviceType: "REPAIR", unitsConsumed: 1,
+        expectedVersion: 1, challengeToken: proof.challenge.token, ownerProof: proof.proof
+      }).expect(401);
+    expect(response.body.error.code).toBe("CHALLENGE_INVALID");
+  });
+
   it("returns 409 for stale versions and stable error envelopes", async () => {
     const { right, app } = await setup();
     await request(app).post(`/entitlements/${right.id}/transfer`)
@@ -274,7 +365,7 @@ describe("API", () => {
   it("advertises hardened pilot capabilities in metadata", async () => {
     const { app } = await setup(true);
     const meta = await request(app).get("/meta").expect(200);
-    expect(meta.body.apiVersion).toBe("0.4.0");
+    expect(meta.body.apiVersion).toBe("0.5.0");
     expect(meta.body.demoEnabled).toBe(true);
     expect(meta.body.ownerProof).toBe("HMAC-SHA256-PILOT");
     expect(meta.body.claimIdempotency).toBe(true);

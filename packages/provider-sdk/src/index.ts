@@ -1,13 +1,13 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { evaluateAuthorization } from "@skillpass/core";
-import type { ServiceRightLedger } from "@skillpass/ckb-adapter";
+import { evaluateAuthorization } from "@skillpass-care/core";
+import type { ServiceRightLedger } from "@skillpass-care/ckb-adapter";
 import type {
   AuthorizationEvidence,
   EntitlementId,
   EvidenceSignature,
   Principal,
   ProviderId
-} from "@skillpass/shared";
+} from "@skillpass-care/shared";
 
 export type EvidenceSigner = (canonicalEvidence: string) => EvidenceSignature;
 

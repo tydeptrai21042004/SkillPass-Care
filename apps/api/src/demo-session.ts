@@ -2,12 +2,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import express, { type Request, type Response } from "express";
 import { z } from "zod";
 import {
-  claimServiceRight,
+  consumeServiceRight,
   evaluateAuthorization,
   transferServiceRight,
   type ServiceRight
-} from "@skillpass/core";
-import { SkillPassError } from "@skillpass/shared";
+} from "@skillpass-care/core";
+import { SkillPassError } from "@skillpass-care/shared";
 
 const COOKIE_NAME = "skillpass_demo";
 const DEFAULT_DEMO_SECRET = "skillpass-care-public-demo-v1-not-a-security-boundary";
@@ -43,6 +43,8 @@ const providerSchema = z.object({
 const providerClaimSchema = z.object({
   providerId: z.string().trim().min(1).max(128),
   claimant: z.string().trim().min(1).max(256),
+  serviceType: z.enum(["DIAGNOSTIC", "INSPECTION", "REPAIR", "REPLACEMENT", "BATTERY_REPLACEMENT"]).default("REPAIR"),
+  unitsConsumed: z.number().int().min(1).max(100).default(1),
   expectedVersion: z.number().int().positive()
 }).strict();
 
@@ -94,11 +96,11 @@ export function createDemoRouter(options: { secret?: string; secureCookies?: boo
   router.post("/entitlements/:id/claim", (req, res) => {
     const body = providerClaimSchema.parse(req.body);
     const right = requireDemoRight(req, req.params.id, secret);
-    const next = claimServiceRight(
+    const next = consumeServiceRight(
       right,
       body.claimant,
       body.providerId,
-      { expectedVersion: body.expectedVersion }
+      { expectedVersion: body.expectedVersion, serviceType: body.serviceType, unitsConsumed: body.unitsConsumed }
     );
     writeDemoRight(res, next, secret, options.secureCookies);
     res.json(next);

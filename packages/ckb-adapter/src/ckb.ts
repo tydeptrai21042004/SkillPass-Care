@@ -1,4 +1,4 @@
-import type { CreateServiceRightInput, ServiceRight } from "@skillpass/core";
+import type { CreateServiceRightInput, ServiceRight } from "@skillpass-care/core";
 import {
   SkillPassError,
   type EntitlementId,
@@ -8,8 +8,10 @@ import {
   type LedgerListFilter,
   type MutationOptions,
   type Principal,
-  type ProviderId
-} from "@skillpass/shared";
+  type ProviderId,
+  type ServiceEventListFilter,
+  type ServiceEventRecord
+} from "@skillpass-care/shared";
 import type { ServiceRightLedger } from "./types.js";
 
 /**
@@ -81,6 +83,13 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     _options: ClaimMutationOptions
   ): Promise<ServiceRight> {
     return this.notImplemented("durable claim transition");
+  }
+
+  async listServiceEvents(
+    _entitlementId: EntitlementId,
+    _filter?: ServiceEventListFilter
+  ): Promise<ServiceEventRecord[]> {
+    return this.notImplemented("list durable Care service events");
   }
 
   async setStatus(

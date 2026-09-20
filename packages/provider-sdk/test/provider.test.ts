@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryLedger } from "@skillpass/ckb-adapter";
+import { InMemoryLedger } from "@skillpass-care/ckb-adapter";
 import { createHmacEvidenceSigner, ProviderVerifier, verifyHmacAuthorizationEvidence } from "../src/index.js";
 
 describe("ProviderVerifier", () => {

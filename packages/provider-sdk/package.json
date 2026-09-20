@@ -1,6 +1,6 @@
 {
-  "name": "@skillpass/provider-sdk",
-  "version": "0.4.0",
+  "name": "@skillpass-care/provider-sdk",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -11,9 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@skillpass/core": "*",
-    "@skillpass/shared": "*",
-    "@skillpass/ckb-adapter": "*"
+    "@skillpass-care/core": "*",
+    "@skillpass-care/shared": "*",
+    "@skillpass-care/ckb-adapter": "*"
   },
   "devDependencies": {
     "vitest": "2.1.4",

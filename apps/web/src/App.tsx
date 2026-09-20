@@ -26,7 +26,8 @@ export function App() {
   const currentOwnerLabel = useMemo(() => ownerName(right?.owner), [right?.owner]);
   const active = Boolean(right && right.status === "ACTIVE" && Date.parse(right.expiresAt) > Date.now());
   const transferred = right?.owner === "bob";
-  const usedService = Boolean(right && right.remainingClaims < 3);
+  const aliceServiceUsed = Boolean(right && right.remainingClaims <= 2);
+  const bobServiceUsed = Boolean(right && transferred && right.remainingClaims <= 1);
 
   useEffect(() => {
     client.meta()
@@ -160,8 +161,9 @@ export function App() {
           <h3>The service right changes hands. The product policy does not.</h3>
           <div className="promiseRows">
             <PromiseRow done icon="1" title="Seller issues coverage" text="Bound to the product commitment and initial holder." />
-            <PromiseRow done={transferred} icon="2" title="Owner transfers the right" text="The entitlement version advances with the new holder." />
-            <PromiseRow done={usedService} icon="3" title="New owner uses service" text="An accepted provider verifies first, then consumes a visit." />
+            <PromiseRow done={aliceServiceUsed} icon="2" title="Alice uses part of the plan" text="Provider A records a covered diagnostic; unused coverage remains portable." />
+            <PromiseRow done={transferred} icon="3" title="Coverage moves to Bob" text="Ownership changes while the remaining Care policy and quota continue." />
+            <PromiseRow done={bobServiceUsed} icon="4" title="Bob continues at Provider B" text="A different accepted provider verifies Bob and consumes the next unit." />
           </div>
         </aside>
       </section>
@@ -172,12 +174,13 @@ export function App() {
           <span className="demoFlag">Public demo · not on-chain</span>
         </div>
         <div className="stepRail">
-          <DemoAction n="01" label="Reset" detail="Fresh pass → Alice" disabled={busy} complete={!transferred && !usedService && right.version === 1} onClick={() => runMutation("Demo reset", client.reset, () => "Fresh service right issued to Alice with three visits.")} />
+          <DemoAction n="01" label="Reset" detail="Fresh plan → Alice" disabled={busy} complete={!transferred && right.remainingClaims === 3 && right.version === 1} onClick={() => runMutation("Demo reset", client.reset, () => "Fresh Care plan issued to Alice with three coverage units.")} />
           <DemoAction n="02" label="Verify Alice" detail="Provider A → allow" disabled={busy || right.owner !== "alice"} onClick={() => runVerification("Provider A verifies Alice", () => client.verify(right.id, "repair-a", "alice"))} />
-          <DemoAction n="03" label="Transfer" detail="Alice → Bob" disabled={busy || right.owner !== "alice"} complete={transferred} onClick={() => runMutation("Transfer Alice → Bob", () => client.transfer(right.id, "alice", "bob", right.version), (next) => `Ownership moved to Bob. Entitlement advanced to version ${next.version}.`)} />
-          <DemoAction n="04" label="Reject Alice" detail="Old owner → deny" disabled={busy || !transferred} onClick={() => runVerification("Provider A checks previous owner", () => client.verify(right.id, "repair-a", "alice"))} />
-          <DemoAction n="05" label="Verify Bob" detail="Provider B → allow" disabled={busy || !transferred} onClick={() => runVerification("Provider B verifies Bob", () => client.verify(right.id, "repair-b", "bob"))} />
-          <DemoAction n="06" label="Use service" detail="Consume one visit" disabled={busy || !transferred || right.remainingClaims <= 0} complete={usedService} onClick={() => runMutation("Provider B records service", () => client.claim(right.id, "repair-b", "bob", right.version), (next) => `${next.remainingClaims} covered visit${next.remainingClaims === 1 ? "" : "s"} remaining.`)} />
+          <DemoAction n="03" label="Alice diagnostic" detail="3 → 2 coverage units" disabled={busy || right.owner !== "alice" || right.remainingClaims !== 3} complete={aliceServiceUsed} onClick={() => runMutation("Provider A records Alice diagnostic", () => client.claim(right.id, "repair-a", "alice", right.version, "DIAGNOSTIC", 1), (next) => `Diagnostic completed. ${next.remainingClaims} coverage units remain and stay transferable.`)} />
+          <DemoAction n="04" label="Transfer" detail="Alice → Bob" disabled={busy || right.owner !== "alice" || right.remainingClaims > 2} complete={transferred} onClick={() => runMutation("Transfer Alice → Bob", () => client.transfer(right.id, "alice", "bob", right.version), (next) => `Ownership moved to Bob without resetting coverage. ${next.remainingClaims} units remain.`)} />
+          <DemoAction n="05" label="Reject Alice" detail="Old owner → deny" disabled={busy || !transferred} onClick={() => runVerification("Provider A checks previous owner", () => client.verify(right.id, "repair-a", "alice"))} />
+          <DemoAction n="06" label="Verify Bob" detail="Provider B → allow" disabled={busy || !transferred} onClick={() => runVerification("Provider B verifies Bob", () => client.verify(right.id, "repair-b", "bob"))} />
+          <DemoAction n="07" label="Bob repair" detail="2 → 1 coverage unit" disabled={busy || !transferred || right.remainingClaims !== 2} complete={bobServiceUsed} onClick={() => runMutation("Provider B records Bob repair", () => client.claim(right.id, "repair-b", "bob", right.version, "REPAIR", 1), (next) => `${next.remainingClaims} coverage unit${next.remainingClaims === 1 ? "" : "s"} remain after cross-provider service continuity.`)} />
         </div>
       </section>
     </> : <ReviewerView right={right} meta={meta} />}
@@ -204,7 +207,7 @@ export function App() {
 function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | null }) {
   return <>
     <section className="reviewerHero card">
-      <div><p className="kicker">Reviewer view</p><h2>What this build proves — and what it does not</h2><p>The deployable demo exercises the ownership/authorization invariant without overstating chain integration. The public demo is serverless-safe; the CKB adapter remains deliberately fail-closed.</p></div>
+      <div><p className="kicker">Reviewer view</p><h2>Portable ownership plus persistent Care coverage.</h2><p>The demo proves a richer application lifecycle: Alice can consume part of a plan, transfer the entitlement, and Bob can continue the remaining coverage at another accepted provider. Ownership and Care policy are intentionally separate layers.</p></div>
       <div className="readiness">
         <Readiness label="Vercel demo" value="Ready" tone="ok" />
         <Readiness label="Owner proof + scoped API" value="Implemented" tone="ok" />
@@ -219,12 +222,13 @@ function ReviewerView({ right, meta }: { right: ServiceRight; meta: ApiMeta | nu
         <h3>Every provider decision resolves current state.</h3>
         <div className="logicStack">
           {[
-            "claimant proof is request-bound (pilot API)",
+            "claimant proof is request-bound to service type and units",
             "entitlement exists",
             "status is ACTIVE and not expired",
             "claimant equals latest current owner",
             "provider is accepted",
-            "remaining service visits > 0"
+            "Care plan permits the requested service",
+            "enough coverage units remain"
           ].map((item) => <div key={item}><span>✓</span>{item}</div>)}
         </div>
       </article>

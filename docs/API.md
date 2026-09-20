@@ -1,8 +1,8 @@
-# API Reference — v0.4
+# API Reference — v0.5
 
 Local base URL: `http://localhost:8787`. Same-origin web/Vercel base URL: `/api`.
 
-All API responses include `x-request-id`. Errors use a stable envelope:
+All responses include `x-request-id`. Errors use a stable envelope:
 
 ```json
 {"error":{"code":"VERSION_CONFLICT","message":"...","requestId":"..."}}
@@ -18,22 +18,22 @@ Owner:    x-owner-id / x-owner-key
 
 These shared secrets are a controlled-pilot mechanism, not the target CKB identity model.
 
-## Health / metadata
+## Metadata and plans
 
-- `GET /health/live` — function/process liveness.
-- `GET /health/ready` — ledger readiness; CKB mode remains `503` until implemented.
-- `GET /health` — readiness alias.
-- `GET /meta` — non-secret capabilities, schema version and owner-proof mode.
+- `GET /health/live`
+- `GET /health/ready`
+- `GET /meta`
+- `GET /care-plans` — reference Care plans and allowed service types.
 
-## Scoped reads
+## Scoped entitlement reads
 
-`GET /entitlements` and `GET /entitlements/:id` require valid actor credentials and are filtered by actor:
+`GET /entitlements` and `GET /entitlements/:id` require actor credentials.
 
-- issuer → rights where `issuerId` matches;
-- owner → rights where current `owner` matches;
-- provider → rights whose `acceptedProviderIds` contains that provider.
+- issuer -> rights issued by that issuer;
+- owner -> rights currently owned by that owner;
+- provider -> rights that accept that provider.
 
-Unauthorized detail access returns `404` to reduce identifier enumeration.
+Unauthorized detail reads return `404`.
 
 ## Issue
 
@@ -51,57 +51,65 @@ Unauthorized detail access returns `404` to reduce identifier enumeration.
 }
 ```
 
-`issuerId` comes only from authenticated credentials. `productHash` is temporarily accepted as a deprecated v0.3 alias for `productCommitment`.
+`issuerId` comes from authenticated credentials. `productHash` remains a deprecated compatibility alias.
 
 ## Transfer
 
 `POST /entitlements/:id/transfer` with current-owner credentials:
 
 ```json
-{"to":"bob","expectedVersion":1}
+{"to":"bob","expectedVersion":2}
 ```
 
-The transfer source is the authenticated owner. Stale state returns `409 VERSION_CONFLICT`.
+Coverage quota/history are not reset by transfer.
 
-## Owner proof flow for provider verification / claim
+## Owner proof flow
 
-A provider cannot authorize a bare `{ "claimant": "bob" }` assertion.
+### Verify challenge
 
-### 1. Provider creates a challenge
-
-`POST /entitlements/:id/challenges` with provider credentials.
-
-Verification:
+`POST /entitlements/:id/challenges`:
 
 ```json
 {"claimant":"bob","action":"VERIFY"}
 ```
 
-Claim:
+### Service challenge
 
-```json
-{"claimant":"bob","action":"CLAIM","serviceEventId":"repair-job-001"}
-```
-
-The returned signed challenge binds entitlement, provider, claimant, action, expiry and optional service event.
-
-### 2. Pilot owner produces proof
-
-`POST /owner-proof/sign` with owner credentials:
-
-```json
-{"challengeToken":"<token from step 1>"}
-```
-
-This produces `HMAC-SHA256-PILOT` proof. It exists only to exercise proof-of-possession semantics before wallet signing is implemented.
-
-### 3a. Verify
-
-`POST /entitlements/:id/verify` with provider credentials:
+A service event binds the exact service and units the owner is approving:
 
 ```json
 {
   "claimant":"bob",
+  "action":"CLAIM",
+  "serviceEventId":"repair-bob-001",
+  "serviceType":"REPAIR",
+  "unitsConsumed":1
+}
+```
+
+The signed challenge binds entitlement, provider, claimant, action, event ID, service type, units and expiry. A provider cannot obtain approval for one diagnostic unit and later submit a two-unit replacement request with the same proof.
+
+### Pilot owner signing
+
+`POST /owner-proof/sign` with owner credentials:
+
+```json
+{"challengeToken":"..."}
+```
+
+This produces `HMAC-SHA256-PILOT` proof. The target integration replaces it with wallet signing by the current SkillPass owner.
+
+## Preferred service-event API
+
+`POST /entitlements/:id/service-events` with provider credentials:
+
+```json
+{
+  "claimant":"bob",
+  "serviceEventId":"repair-bob-001",
+  "serviceType":"REPAIR",
+  "unitsConsumed":1,
+  "expectedVersion":3,
   "challengeToken":"...",
   "ownerProof":{
     "scheme":"HMAC-SHA256-PILOT",
@@ -112,33 +120,47 @@ This produces `HMAC-SHA256-PILOT` proof. It exists only to exercise proof-of-pos
 }
 ```
 
-The provider verifier still resolves the latest entitlement state after proof validation. A proof created before a transfer therefore does not make the previous owner eligible.
-
-### 3b. Claim
-
-`POST /entitlements/:id/claim`:
+Response:
 
 ```json
 {
-  "claimant":"bob",
-  "serviceEventId":"repair-job-001",
-  "expectedVersion":2,
-  "challengeToken":"...",
-  "ownerProof":{ "scheme":"HMAC-SHA256-PILOT", "challengeId":"...", "claimant":"bob", "value":"..." }
+  "entitlement": { "remainingClaims": 1, "version": 4 },
+  "event": {
+    "eventVersion": 1,
+    "eventId": "repair-bob-001",
+    "providerId": "repair-b",
+    "claimant": "bob",
+    "serviceType": "REPAIR",
+    "unitsConsumed": 1,
+    "entitlementVersionBefore": 3,
+    "entitlementVersionAfter": 4,
+    "remainingClaimsAfter": 1
+  }
 }
 ```
 
-`serviceEventId` is idempotent per provider. Retrying the exact same request returns the original result instead of consuming another claim. Reusing the same event ID for a different bound request returns `409 IDEMPOTENCY_CONFLICT`.
+`providerId + serviceEventId` is idempotent. Exact retries return the existing committed result. Reusing the ID for a changed claimant, request hash, service type or unit count returns `409 IDEMPOTENCY_CONFLICT`.
+
+`POST /entitlements/:id/claim` remains as a deprecated compatibility route and emits a `Deprecation: true` response header.
+
+## Service history
+
+`GET /entitlements/:id/service-events`:
+
+- current owner and issuer may read the transferable event history;
+- a provider sees only that provider's events.
+
+Detailed private technician notes should not be placed in the transferable event record.
 
 ## Status
 
 `PATCH /entitlements/:id/status` with issuer credentials:
 
 ```json
-{"status":"SUSPENDED","expectedVersion":2}
+{"status":"SUSPENDED","expectedVersion":4}
 ```
 
-Revocation is irreversible in the current transition model.
+Revocation remains irreversible.
 
 ## Public demo
 
@@ -152,4 +174,4 @@ POST /demo/entitlements/:id/verify
 POST /demo/entitlements/:id/claim
 ```
 
-These routes intentionally simulate named actors and are not an ownership-security boundary.
+The product demo now shows Alice consuming a diagnostic before transfer and Bob consuming a repair after transfer. These routes are still actor-simulated and not an ownership-security boundary.

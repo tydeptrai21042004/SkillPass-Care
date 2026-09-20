@@ -1,81 +1,115 @@
-# How to Verify v0.4
+# How to Verify v0.5
 
-## Dependency-free repository preflight
+## 1. Dependency-free repository checks
 
 ```bash
-npm run preflight
+npm run verify:care
 ```
 
-This confirms the single Vercel entrypoint, required hardening files and workspace version consistency.
+This verifies repository structure, package versioning, single Vercel entrypoint, the Care-specific namespace, service-event surface, and the documented SkillPass/Care boundary.
 
-## Full checks
+## 2. Full checks
+
+After generating/committing a lockfile in a networked environment:
+
+```bash
+npm ci
+npm run check
+```
+
+Without a lockfile during development:
 
 ```bash
 npm install --no-audit --no-fund
 npm run check
 ```
 
-## Public demo lifecycle
+## 3. Flagship public demo
 
-Run `npm run dev`, use a cookie jar, and exercise:
+Run `npm run dev` and execute this exact sequence in the Product view:
 
 ```text
-GET /demo/state
-Alice at repair-a -> ALLOW
+Reset
+Provider A verifies Alice
+Alice diagnostic: 3 -> 2
 transfer Alice -> Bob
-Alice at repair-a -> WRONG_OWNER
-Bob at repair-b -> ALLOW
+Provider A rejects Alice
+Provider B verifies Bob
+Bob repair: 2 -> 1
 ```
 
-The public demo is intentionally actor-simulated and does not test proof-of-possession.
+Expected product property: ownership changes, but remaining Care coverage is not reset.
 
-## Authenticated owner-proof flow
+## 4. Authenticated typed service event
 
-Use credentials from `.env`.
+Create a CLAIM challenge containing:
 
-1. Provider A creates a verify challenge:
-
-```bash
-curl -s -X POST http://localhost:8787/entitlements/ENT_ID/challenges \
-  -H 'content-type: application/json' \
-  -H 'x-provider-id: repair-a' -H 'x-provider-key: PROVIDER_SECRET' \
-  -d '{"claimant":"alice","action":"VERIFY"}'
+```json
+{
+  "claimant":"alice",
+  "action":"CLAIM",
+  "serviceEventId":"diag-alice-001",
+  "serviceType":"DIAGNOSTIC",
+  "unitsConsumed":1
+}
 ```
 
-2. Alice signs the returned `token` using the pilot signing endpoint:
+Sign the returned token as Alice, then submit the same fields to:
 
-```bash
-curl -s -X POST http://localhost:8787/owner-proof/sign \
-  -H 'content-type: application/json' \
-  -H 'x-owner-id: alice' -H 'x-owner-key: ALICE_SECRET' \
-  -d '{"challengeToken":"TOKEN"}'
+```text
+POST /entitlements/:id/service-events
 ```
 
-3. Provider submits claimant + token + proof to `/entitlements/ENT_ID/verify`.
+Expected response contains both the updated entitlement and a `ServiceEventRecord`.
 
-Expected evidence includes `requestHash`, `stateRef`, expiry and `HMAC-SHA256-PILOT` signature.
+## 5. Request-tampering test
 
-## Claim replay check
+Request owner approval for:
 
-Create a `CLAIM` challenge with a stable `serviceEventId`, sign it, then submit the same claim twice. `remainingClaims` must decrement only once and both exact retries must return the same committed result. A different claimant/request reusing the same provider event ID must return `409 IDEMPOTENCY_CONFLICT`.
-
-## Scoped read check
-
-- no credentials → `401`;
-- owner → only current-owner rights;
-- provider → only rights accepting that provider;
-- issuer → only rights issued by that issuer.
-
-A provider requesting an unrelated entitlement detail should receive `404`.
-
-## Product commitment helper
-
-```bash
-npm run product:commitment -- seller-namespace serial-or-internal-id
+```text
+DIAGNOSTIC / 1 unit
 ```
 
-Store the returned salt off-chain if future recomputation is needed. Only the `sha256:<64 hex>` commitment belongs in the entitlement.
+Then submit the same proof as:
 
-## CKB boundary check
+```text
+REPAIR / 1 unit
+```
 
-Set `LEDGER_MODE=ckb`. `/health/ready` should remain `503`, and state operations should fail with `NOT_IMPLEMENTED`. This is expected until the real live-Cell protocol is deployed.
+Expected: `401 CHALLENGE_INVALID`.
+
+Repeat by changing `unitsConsumed`; it must also fail.
+
+## 6. Transfer-race test
+
+1. Create a service challenge/proof for Alice.
+2. Transfer the right Alice -> Bob.
+3. Attempt to commit Alice's previously approved service event.
+
+Expected: service commit denied because Alice is no longer the current owner.
+
+## 7. Cross-provider continuity test
+
+Authenticated API test:
+
+```text
+Alice + Provider A diagnostic -> 2 units
+transfer -> Bob
+Bob + Provider B repair -> 1 unit
+```
+
+Then read history as Bob. It must contain both provider events. Read the same history as Provider A: only Provider A's event should be visible.
+
+## 8. Final-unit concurrency test
+
+With one unit remaining, submit two different service events concurrently at the same expected version. Exactly one may commit.
+
+## 9. CKB honesty boundary
+
+Set `LEDGER_MODE=ckb`.
+
+- RPC probe may succeed.
+- readiness remains false.
+- state operations remain fail-closed.
+
+This is expected until the canonical SkillPass testnet bridge is connected.

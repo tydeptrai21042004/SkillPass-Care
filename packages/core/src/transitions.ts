@@ -1,12 +1,19 @@
 import {
   SkillPassError,
+  type CareServiceType,
   type EntitlementStatus,
   type MutationOptions,
   type Principal,
   type ProviderId
-} from "@skillpass/shared";
+} from "@skillpass-care/shared";
 import type { ServiceRight } from "./model.js";
 import { evaluateAuthorization } from "./policy.js";
+import { resolveCarePlan } from "./plans.js";
+
+export interface ServiceConsumptionOptions extends MutationOptions {
+  serviceType: CareServiceType;
+  unitsConsumed: number;
+}
 
 export function transferServiceRight(
   right: ServiceRight,
@@ -24,11 +31,15 @@ export function transferServiceRight(
   return commit({ ...right, owner: nextOwner }, now);
 }
 
-export function claimServiceRight(
+/**
+ * Care-specific service consumption. SkillPass/CKB ownership decides who may
+ * act; Care policy decides which service is covered and how many units it uses.
+ */
+export function consumeServiceRight(
   right: ServiceRight,
   claimant: Principal,
   providerId: ProviderId,
-  options: MutationOptions,
+  options: ServiceConsumptionOptions,
   now = new Date()
 ): ServiceRight {
   requireVersion(right, options);
@@ -40,7 +51,41 @@ export function claimServiceRight(
   if (!decision.allowed) {
     throw new SkillPassError("FORBIDDEN", `claim denied: ${decision.reason}`, 403);
   }
-  return commit({ ...right, remainingClaims: right.remainingClaims - 1 }, now);
+
+  if (!Number.isSafeInteger(options.unitsConsumed) || options.unitsConsumed < 1 || options.unitsConsumed > 100) {
+    throw new SkillPassError("VALIDATION_ERROR", "unitsConsumed must be an integer between 1 and 100", 400);
+  }
+  if (options.unitsConsumed > right.remainingClaims) {
+    throw new SkillPassError("FORBIDDEN", "claim denied: insufficient remaining coverage units", 403);
+  }
+
+  const plan = resolveCarePlan(right.serviceClass);
+  if (plan && !plan.allowedServiceTypes.includes(options.serviceType)) {
+    throw new SkillPassError(
+      "FORBIDDEN",
+      `claim denied: ${options.serviceType} is not covered by ${plan.id}`,
+      403
+    );
+  }
+
+  return commit({ ...right, remainingClaims: right.remainingClaims - options.unitsConsumed }, now);
+}
+
+/** Backward-compatible one-unit repair claim used by older v0.4 callers. */
+export function claimServiceRight(
+  right: ServiceRight,
+  claimant: Principal,
+  providerId: ProviderId,
+  options: MutationOptions,
+  now = new Date()
+): ServiceRight {
+  return consumeServiceRight(
+    right,
+    claimant,
+    providerId,
+    { ...options, serviceType: "REPAIR", unitsConsumed: 1 },
+    now
+  );
 }
 
 export function setServiceRightStatus(

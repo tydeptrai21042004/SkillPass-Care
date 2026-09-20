@@ -5,6 +5,12 @@ export type ServiceEventId = string;
 
 export type EntitlementStatus = "ACTIVE" | "SUSPENDED" | "REVOKED";
 export type OwnerProofAction = "VERIFY" | "CLAIM";
+export type CareServiceType =
+  | "DIAGNOSTIC"
+  | "INSPECTION"
+  | "REPAIR"
+  | "REPLACEMENT"
+  | "BATTERY_REPLACEMENT";
 
 export type AuthorizationReason =
   | "ALLOW"
@@ -57,6 +63,33 @@ export interface ClaimMutationOptions extends MutationOptions {
   serviceEventId: ServiceEventId;
   /** Hash of the canonical claim request/challenge binding. */
   requestHash: string;
+  /** Care-specific service classification bound into the owner challenge. */
+  serviceType?: CareServiceType;
+  /** Coverage units consumed by this event. Defaults to one. */
+  unitsConsumed?: number;
+}
+
+/**
+ * Durable/auditable Care-domain record. Ownership still comes from SkillPass/CKB;
+ * this record describes service consumption against that ownership state.
+ */
+export interface ServiceEventRecord {
+  eventVersion: 1;
+  eventId: ServiceEventId;
+  entitlementId: EntitlementId;
+  providerId: ProviderId;
+  claimant: Principal;
+  serviceType: CareServiceType;
+  unitsConsumed: number;
+  requestHash: string;
+  entitlementVersionBefore: number;
+  entitlementVersionAfter: number;
+  remainingClaimsAfter: number;
+  occurredAt: string;
+}
+
+export interface ServiceEventListFilter {
+  providerId?: ProviderId;
 }
 
 export interface OwnerChallengePayload {
@@ -67,6 +100,10 @@ export interface OwnerChallengePayload {
   claimant: Principal;
   action: OwnerProofAction;
   serviceEventId?: ServiceEventId;
+  /** Present only for CLAIM challenges. */
+  serviceType?: CareServiceType;
+  /** Present only for CLAIM challenges. */
+  unitsConsumed?: number;
   issuedAt: string;
   expiresAt: string;
 }

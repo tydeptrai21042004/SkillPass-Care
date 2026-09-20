@@ -58,7 +58,7 @@ npm run dev
 
 ## Post-deploy smoke checks
 
-1. `GET /api/meta` returns v0.4 metadata.
+1. `GET /api/meta` returns v0.5 metadata.
 2. `GET /api/demo/state` returns the demo right when demo mode is enabled.
 3. Alice verifies in the demo, transfer Alice→Bob succeeds, then Alice is denied and Bob is accepted.
 4. `GET /api/entitlements` returns `401` without credentials.

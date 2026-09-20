@@ -4,7 +4,7 @@ SkillPass Care should put the minimum necessary entitlement state in shared/on-c
 
 ## Product commitment
 
-The entitlement stores `ServiceRight.productCommitment`, not a raw serial number. v0.4 requires the format:
+The entitlement stores `ServiceRight.productCommitment`, not a raw serial number. the pilot requires the format:
 
 ```text
 sha256:<64 lowercase/uppercase hex digits>

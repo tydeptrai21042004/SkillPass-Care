@@ -35,6 +35,9 @@ export interface ApiMeta {
   ownerProof: string;
   ownerProofTtlSeconds: number;
   claimIdempotency: boolean;
+  typedServiceEvents?: boolean;
+  serviceTypeAndUnitsBoundToOwnerProof?: boolean;
+  carePlans?: boolean;
   scopedReads: boolean;
   demoEnabled: boolean;
   demoRoute: string | null;
@@ -81,9 +84,16 @@ export const client = {
       method: "POST",
       body: JSON.stringify({ providerId, claimant })
     }),
-  claim: (id: string, providerId: string, claimant: string, expectedVersion?: number) =>
+  claim: (
+    id: string,
+    providerId: string,
+    claimant: string,
+    expectedVersion: number | undefined,
+    serviceType: "DIAGNOSTIC" | "INSPECTION" | "REPAIR" | "REPLACEMENT" | "BATTERY_REPLACEMENT" = "REPAIR",
+    unitsConsumed = 1
+  ) =>
     json<ServiceRight>(`/demo/entitlements/${encodeURIComponent(id)}/claim`, {
       method: "POST",
-      body: JSON.stringify({ providerId, claimant, expectedVersion })
+      body: JSON.stringify({ providerId, claimant, expectedVersion, serviceType, unitsConsumed })
     })
 };

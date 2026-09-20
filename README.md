@@ -1,58 +1,124 @@
 # SkillPass Care
 
-SkillPass Care is a prototype for **portable service rights for second-hand products**. A seller issues a service entitlement, the current entitlement owner can transfer it to a buyer, and accepted providers independently verify the latest entitlement state before providing service.
+**Portable service coverage for second-hand products, built as a reference product on SkillPass.**
 
-> Important: the software enforces transfer of the **service entitlement**. For ordinary physical products it cannot independently prove that the physical item changed hands. A pilot should transfer the service right as part of the sale flow. A future CKB-native product asset could make product + service-right transfer atomic.
+SkillPass Care is intentionally more than a thin ownership demo. SkillPass provides the reusable portable-right primitive; Care adds the product-specific lifecycle that makes the primitive useful for a real service program:
 
-## v0.4 security/protocol hardening
+- product binding through a privacy-preserving commitment;
+- coverage plans and remaining service units;
+- multi-provider service acceptance;
+- typed, idempotent service-event history;
+- issuer suspend/resume/revoke controls;
+- current-owner proof before service;
+- continuity of remaining coverage across resale.
 
-- Provider verification no longer trusts a caller-supplied `claimant` string by itself.
-- Provider creates a short-lived, request-bound owner challenge.
-- The owner proves possession in the pilot with `HMAC-SHA256-PILOT`; a CKB wallet signature replaces this later.
-- Challenges bind entitlement, provider, claimant, action and (for claims) `serviceEventId`.
-- Claims are idempotent by `providerId + serviceEventId` and bind the idempotency key to the original request hash.
-- Entitlement reads are actor-scoped: issuers see what they issued, owners see what they own, providers see rights that accept them.
-- Provider verification evidence includes request hash, entitlement version/state reference, expiry and a clearly labeled pilot HMAC signature.
-- `schemaVersion` is distinct from mutable state `version`.
-- A canonical CKB V1 data model is defined; owner is intentionally excluded from Cell data because CKB ownership must come from the live Cell lock.
-- CKB mutation/read operations still fail closed until the real type script, indexer resolution and wallet transaction flow exist.
-- Production demo sessions require a strong secret; production pilot mode additionally requires a strong owner-challenge secret and complete actor credentials.
-- Conflicting legacy Vercel entrypoints were removed. `api/router.ts` is the only serverless entrypoint.
+## Flagship lifecycle
+
+```text
+STANDARD_90D issued to Alice
+3 coverage units
+        │
+        ├─ Provider A verifies Alice
+        └─ diagnostic service: 3 -> 2
+
+Alice sells the product to Bob
+        │
+        └─ SkillPass ownership transfer: Alice -> Bob
+
+After transfer
+        ├─ Alice -> DENY
+        ├─ Provider B verifies Bob
+        └─ repair service: 2 -> 1
+
+Final state
+owner = Bob
+remaining coverage = 1
+history = Provider A diagnostic + Provider B repair
+```
+
+That cross-owner, cross-provider continuity is the main Care product demonstration.
+
+> **Physical-product honesty boundary:** SkillPass Care proves control of the service entitlement associated with a product commitment. It does not independently prove possession of an ordinary physical product. The pilot pairs product handoff with service-right transfer operationally.
+
+## Architecture
+
+```text
+SkillPass / CKB ownership layer
+  current portable-right owner
+  transfer
+  owner proof
+  provider authorization evidence
+            │
+            ▼
+SkillPass Care application layer
+  product commitment
+  Care plan
+  remaining coverage
+  service-event history
+  issuer controls
+  provider workflow
+```
+
+The two layers are deliberately separate. Ownership transfer does **not** reset Care coverage or erase service history. Service use does **not** change ownership.
+
+See:
+
+- `docs/SKILLPASS_INTEGRATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/SERVICE_EVENTS.md`
+- `docs/DURABLE_STORE.md`
+
+## v0.5 improvements
+
+- Workspace packages now use the `@skillpass-care/*` namespace instead of looking like duplicate core SkillPass packages.
+- Added reference Care plans (`STANDARD_90D`, `PREMIUM_365D`, `BATTERY_180D`).
+- Service requests bind `serviceType` and `unitsConsumed` into the owner-approved challenge.
+- Added typed `ServiceEventRecord` audit entries with before/after state versions.
+- Added `POST /entitlements/:id/service-events` as the preferred service-consumption API.
+- Added actor-scoped `GET /entitlements/:id/service-events` history.
+- Exact service-event retries remain idempotent; changed request details conflict.
+- Added cross-provider continuity tests: Alice/Provider A -> transfer -> Bob/Provider B.
+- Added stale pre-transfer service-proof rejection tests.
+- Public demo now shows **service before transfer and service after transfer**, rather than only transfer + one final claim.
+- Added a clean repository preflight, CI workflow, env template, Git ignore and Docker ignore.
+- Removed conflicting legacy Vercel API entrypoints.
 
 ## Runtime boundaries
 
 ```text
 Public browser demo
-  └─ signed HttpOnly browser-session state
-     └─ non-authoritative Alice → Bob showcase
+  signed HttpOnly session state
+  rich Care lifecycle showcase
+  NOT authoritative blockchain state
 
 Authenticated pilot API
-  ├─ issuer credentials
-  ├─ provider credentials
-  ├─ owner proof challenge / proof-of-possession
-  └─ ServiceRightLedger
-       └─ InMemoryLedger (local / controlled single-process pilot only)
+  issuer/provider/owner credentials
+  request-bound owner proof
+  typed service events
+  actor-scoped reads
+  InMemoryLedger for controlled single-process pilot/testing
 
-CKB boundary
-  ├─ RPC health probe
-  ├─ versioned V1 Cell-data model
-  └─ reads/writes fail closed until canonical live-Cell implementation exists
+CKB / SkillPass boundary
+  RPC health probe
+  legacy prototype codec retained only for compatibility tests
+  live writes/read resolution still fail closed until canonical SkillPass integration exists
 ```
 
-The UI never presents the public demo or memory ledger as an on-chain transfer.
+The UI never presents browser-session or memory-ledger mutations as real on-chain transactions.
 
 ## Repository layout
 
 ```text
-api/router.ts                    Vercel API entrypoint
-apps/api/                        HTTP/auth/challenge/runtime boundary
-apps/web/                        public product/reviewer demo
-packages/core/                   domain model, authorization, transitions
-packages/shared/                 DTOs/errors/proof/evidence types
-packages/ckb-adapter/            memory ledger + CKB boundary + V1 Cell schema
-packages/provider-sdk/           provider verifier + signed pilot evidence
-packages/config/                 environment validation
-docs/                            protocol, security, deployment and pilot notes
+api/router.ts                      Vercel API entrypoint
+apps/api/                          HTTP/auth/challenge/runtime boundary
+apps/web/                          product + reviewer demo
+packages/core/                     Care domain model, plans, policy, transitions
+packages/shared/                   DTOs, proof/evidence/service-event types
+packages/ckb-adapter/              pilot coverage store + fail-closed CKB boundary
+packages/provider-sdk/             provider verifier + signed pilot evidence
+packages/config/                   environment validation
+docs/                              product/protocol/security/pilot documentation
+scripts/                           preflight + product commitment + Care boundary checks
 ```
 
 ## Local development
@@ -66,10 +132,36 @@ npm run check
 npm run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies `/api/*` to the local API on port `8787`.
+Open `http://localhost:5173`.
+
+## Quick structural verification
+
+No dependency install is needed for the repository-level checks:
+
+```bash
+npm run verify:care
+```
+
+The full suite requires dependencies:
+
+```bash
+npm run check
+```
+
+## Product commitment helper
+
+Generate a domain-separated, salted product commitment:
+
+```bash
+npm run product:commitment -- seller-namespace serial-or-internal-id
+```
+
+Only the `sha256:<64 hex>` commitment belongs in the entitlement. Keep the random salt private if future recomputation is needed.
 
 ## Production caveats
 
-The memory ledger is not durable across horizontally scaled/serverless instances. Do not use it as production entitlement storage. The next protocol milestone is canonical CKB live-Cell resolution and wallet-signed transitions; until then CKB mode deliberately returns `NOT_IMPLEMENTED` for state operations.
+The in-memory coverage store is intentionally **not** durable across horizontally scaled/serverless instances. A real pilot should add a transactional durable Care store while SkillPass/CKB remains the authoritative portable-ownership source.
 
-The repository pins direct dependency versions, but this archive does not contain a fabricated lockfile because registry access was unavailable while preparing it. Generate and commit `package-lock.json` from a networked environment before a production release.
+`LEDGER_MODE=ckb` still fails closed for state operations. That is deliberate until the main SkillPass repository exposes a deployed, versioned live-Cell integration and wallet-signed transfer flow.
+
+The repository pins direct dependency versions, but this archive does not invent a transitive npm lockfile. Generate and commit `package-lock.json` from a networked environment before a production release, then use `npm ci` in CI/deployment.

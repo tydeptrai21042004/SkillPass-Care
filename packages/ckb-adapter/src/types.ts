@@ -1,4 +1,4 @@
-import type { CreateServiceRightInput, ServiceRight } from "@skillpass/core";
+import type { CreateServiceRightInput, ServiceRight } from "@skillpass-care/core";
 import type {
   ClaimMutationOptions,
   EntitlementId,
@@ -7,8 +7,10 @@ import type {
   LedgerListFilter,
   MutationOptions,
   Principal,
-  ProviderId
-} from "@skillpass/shared";
+  ProviderId,
+  ServiceEventListFilter,
+  ServiceEventRecord
+} from "@skillpass-care/shared";
 
 /** Storage/ledger boundary used by the API and independent provider verifiers. */
 export interface ServiceRightLedger {
@@ -27,6 +29,10 @@ export interface ServiceRightLedger {
     providerId: ProviderId,
     options: ClaimMutationOptions
   ): Promise<ServiceRight>;
+  listServiceEvents(
+    entitlementId: EntitlementId,
+    filter?: ServiceEventListFilter
+  ): Promise<ServiceEventRecord[]>;
   setStatus(
     entitlementId: EntitlementId,
     issuerId: string,

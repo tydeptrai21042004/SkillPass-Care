@@ -1,42 +1,36 @@
-# CKB ServiceRight Cell — V1 Design Boundary
+# CKB / SkillPass Data Boundary
 
-`packages/ckb-adapter/src/cell-schema.ts` defines the prototype V1 data payload.
+The target architecture does **not** put all mutable SkillPass Care business state into the portable ownership Cell.
 
-## Authoritative ownership
-
-`owner` is **not serialized in Cell data**. In CKB mode the authoritative owner is the current live Cell's lock script.
-
-## V1 payload
+## Target split
 
 ```text
-schemaVersion
-id
-issuerId
-productCommitment
-serviceClass
-remainingClaims
-expiresAt
-transferable
-acceptedProviderIds
-status
-version
-createdAt
-updatedAt
+SkillPass / CKB portable state
+  capability identity
+  issuer
+  product/subject commitment
+  Care policy commitment
+  expiry / transferable flags
+  current owner from live Cell lock
+
+SkillPass Care application state
+  remaining coverage
+  service-event history
+  accepted-provider workflow metadata
+  issuer status reason
+  private service details
 ```
 
-The current deterministic JSON byte encoding exists to freeze semantics and support tests. Decoding is strict: unknown fields are rejected, `productCommitment` must be canonical lowercase `sha256:<64 hex>`, timestamps must be canonical UTC ISO strings, and `acceptedProviderIds` must be unique and lexicographically sorted. It is not a claim that JSON is the final on-chain serialization. Before deployment, replace it with a reviewed Molecule schema and bind the type script to the stable entitlement identity.
+This separation lets SkillPass remain a reusable portable-right protocol while Care remains a rich application.
 
-## Required live-Cell invariant
+## Legacy prototype codec in this repository
 
-For one entitlement identity `E`, a correct resolver must find at most one canonical live Cell. `selectUniqueLiveCell()` makes duplicate live Cells an explicit fail-closed `LEDGER_UNAVAILABLE` condition rather than choosing one arbitrarily. Transfer consumes the old Cell and creates exactly one successor locked to the new owner.
+`packages/ckb-adapter/src/cell-schema.ts` still contains `CkbServiceRightDataV1`. It exists to preserve and test the earlier prototype semantics while the canonical cross-repository SkillPass Capability V2 mapping is finalized. **It is not the proposed final on-chain schema.**
 
-## Still intentionally unimplemented
+It intentionally excludes `owner`; even in the legacy prototype, owner must come from the live Cell lock.
 
-- deployed type-script code hash/args;
-- canonical indexer query;
-- lock-script-to-principal mapping;
-- transaction construction/signing;
-- confirmation/reorg policy;
-- claim transition/receipt semantics.
+Before a real CKB deployment, replace the prototype JSON encoding with the canonical SkillPass capability/Molecule representation and store only the fields needed by the portable ownership layer. Care's mutable service-event history and quota accounting belong in a durable Care store unless a later protocol milestone explicitly proves a different design is necessary.
 
-Until these exist, `CkbLedgerAdapter` remains fail closed.
+## Required live-state invariant
+
+For one portable right identity `E`, resolution must produce at most one canonical live Cell. Transfer consumes the old Cell and creates the successor owned by the recipient. A provider must fail closed on duplicate/ambiguous live state or inability to establish finality.

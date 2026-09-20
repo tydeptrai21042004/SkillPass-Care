@@ -4,10 +4,12 @@
 
 - Issuer, provider and transfer-source identity are derived from authenticated credentials, not request JSON.
 - Provider verification/claim requires owner proof bound to entitlement, provider, claimant, action and expiration.
-- Claim challenges additionally bind `serviceEventId`.
+- Claim challenges additionally bind `serviceEventId`, `serviceType`, and `unitsConsumed`.
 - The latest entitlement is resolved after owner proof validation; stale pre-transfer proof cannot restore old-owner eligibility.
 - Mutations require `expectedVersion` in the off-chain pilot.
-- Claim retries are idempotent and reject event-ID/request-hash mismatch.
+- Service retries are idempotent and reject event-ID/request-hash/service-detail mismatch.
+- Typed service events record before/after entitlement versions and remaining coverage.
+- Provider service-history reads are scoped to that provider; current owner/issuer can inspect transferable history.
 - List/detail reads are actor-scoped.
 - Revocation is irreversible.
 - Demo state is signed, HttpOnly and non-authoritative.

@@ -1,4 +1,4 @@
-import type { EntitlementId, EntitlementStatus, Principal, ProviderId } from "@skillpass/shared";
+import type { EntitlementId, EntitlementStatus, Principal, ProviderId } from "@skillpass-care/shared";
 
 export const SERVICE_RIGHT_SCHEMA_VERSION = 1 as const;
 

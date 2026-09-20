@@ -2,7 +2,7 @@
 import { readdir, readFile, access } from "node:fs/promises";
 
 const failures = [];
-const required = [".env.example", ".gitignore", "api/router.ts", "docs/OWNER_PROOF.md", "docs/CKB_CELL_SCHEMA.md"];
+const required = [".env.example", ".gitignore", ".dockerignore", ".github/workflows/ci.yml", "api/router.ts", "docs/OWNER_PROOF.md", "docs/CKB_CELL_SCHEMA.md", "docs/SKILLPASS_INTEGRATION.md", "docs/SERVICE_EVENTS.md", "docs/DURABLE_STORE.md", "db/001_care_coverage.sql"];
 for (const file of required) {
   try { await access(file); } catch { failures.push(`missing required file: ${file}`); }
 }
@@ -15,7 +15,7 @@ if (JSON.stringify(apiFiles) !== JSON.stringify(["router.ts"])) {
 const packageFiles = ["package.json", ...(await readdir("apps", { withFileTypes: true })).filter(x => x.isDirectory()).map(x => `apps/${x.name}/package.json`), ...(await readdir("packages", { withFileTypes: true })).filter(x => x.isDirectory()).map(x => `packages/${x.name}/package.json`)];
 for (const file of packageFiles) {
   const pkg = JSON.parse(await readFile(file, "utf8"));
-  if (pkg.version !== "0.4.0") failures.push(`${file} version is ${pkg.version}, expected 0.4.0`);
+  if (pkg.version !== "0.5.0") failures.push(`${file} version is ${pkg.version}, expected 0.5.0`);
 }
 
 const vercel = JSON.parse(await readFile("vercel.json", "utf8"));

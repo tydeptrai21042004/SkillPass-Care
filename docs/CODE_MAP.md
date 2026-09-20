@@ -1,34 +1,51 @@
-# Code Map — v0.4
+# Code Map — v0.5
 
-## `packages/shared`
-Identifiers, challenge/proof DTOs, signed-evidence shape, idempotent claim options, scoped ledger filters and stable errors.
+```text
+apps/api/src/app.ts
+  authenticated Care HTTP API
+  typed service events
+  scoped history reads
+  issuer/owner/provider boundaries
 
-## `packages/core`
-- `model.ts` — `ServiceRight`, `schemaVersion`, product commitment.
-- `policy.ts` — pure state authorization.
-- `transitions.ts` — mandatory-version transfer/claim/status transitions.
+apps/api/src/owner-proof.ts
+  request-bound owner proof
+  binds serviceEventId + serviceType + unitsConsumed
 
-## `packages/ckb-adapter`
-- `types.ts` — ledger contract.
-- `memory.ts` — scoped reads, optimistic transitions and replay-safe claim idempotency.
-- `cell-schema.ts` — strict deterministic V1 prototype Cell-data encoding; intentionally excludes owner.
-- `live-cell.ts` — fail-closed uniqueness helper for canonical live-Cell resolution.
-- `ckb.ts` — RPC health + fail-closed unimplemented state operations.
+apps/api/src/demo-session.ts
+  stateless public demo
+  rich Alice -> service -> Bob -> service lifecycle
 
-## `packages/provider-sdk`
-Latest-state verification plus canonical request hashing, state references and optional `HMAC-SHA256-PILOT` evidence signing.
+apps/web/src/App.tsx
+  product-first demo + reviewer view
 
-## `packages/config`
-Production secret/credential validation, challenge TTL, CORS and ledger configuration.
+packages/core/src/model.ts
+  Care entitlement/application state
 
-## `apps/api`
-- `auth.ts` — actor authentication.
-- `owner-proof.ts` — stateless signed challenge tokens, canonical owner message and pilot proof verification.
-- `app.ts` — scoped routes, owner-proof flow, idempotent claim boundary, error mapping.
-- `runtime.ts` — config + ledger selection.
+packages/core/src/plans.ts
+  reference Care plans and allowed service types
 
-## `apps/web`
-Uses only `/demo/*` for the public Alice→Bob showcase. It does not pretend to exercise authenticated owner proof or on-chain CKB transitions.
+packages/core/src/policy.ts
+  pure authorization checks
 
-## `api/router.ts`
-Only Vercel function entrypoint. Legacy `api/index.ts` and `api/[...path].ts` were removed to avoid routing ambiguity.
+packages/core/src/transitions.ts
+  transfer, service consumption, status transitions
+
+packages/ckb-adapter/src/memory.ts
+  single-process pilot coverage store
+  typed service-event history
+  idempotency + optimistic concurrency
+
+packages/ckb-adapter/src/ckb.ts
+  fail-closed CKB integration boundary
+
+packages/ckb-adapter/src/cell-schema.ts
+  deprecated legacy Care Cell prototype codec
+
+packages/provider-sdk/src/index.ts
+  provider verification + pilot signed evidence
+
+packages/shared/src/index.ts
+  cross-package DTOs, proof/evidence/service-event types
+```
+
+The target SkillPass integration is documented in `SKILLPASS_INTEGRATION.md` and intentionally does not collapse Care's business state into the portable ownership protocol.

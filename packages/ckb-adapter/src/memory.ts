@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import {
-  claimServiceRight,
+  consumeServiceRight,
   SERVICE_RIGHT_SCHEMA_VERSION,
   setServiceRightStatus,
   transferServiceRight,
   type CreateServiceRightInput,
   type ServiceRight
-} from "@skillpass/core";
+} from "@skillpass-care/core";
 import {
   SkillPassError,
+  type CareServiceType,
   type ClaimMutationOptions,
   type EntitlementId,
   type EntitlementStatus,
@@ -16,8 +17,10 @@ import {
   type LedgerListFilter,
   type MutationOptions,
   type Principal,
-  type ProviderId
-} from "@skillpass/shared";
+  type ProviderId,
+  type ServiceEventListFilter,
+  type ServiceEventRecord
+} from "@skillpass-care/shared";
 import type { ServiceRightLedger } from "./types.js";
 
 interface ClaimEventRecord {
@@ -25,13 +28,17 @@ interface ClaimEventRecord {
   claimant: Principal;
   providerId: ProviderId;
   requestHash: string;
+  serviceType: CareServiceType;
+  unitsConsumed: number;
   result: ServiceRight;
+  event: ServiceEventRecord;
 }
 
-/** Executable ledger for local demos/tests. Not a substitute for CKB finality. */
+/** Executable ledger for local demos/tests. Not a substitute for CKB finality or a durable SQL store. */
 export class InMemoryLedger implements ServiceRightLedger {
   private readonly rights = new Map<EntitlementId, ServiceRight>();
   private readonly claimEvents = new Map<string, ClaimEventRecord>();
+  private readonly serviceEventsByEntitlement = new Map<EntitlementId, ServiceEventRecord[]>();
 
   async issue(input: CreateServiceRightInput): Promise<ServiceRight> {
     const issuerId = requireText(input.issuerId, "issuerId", 256);
@@ -74,6 +81,7 @@ export class InMemoryLedger implements ServiceRightLedger {
       updatedAt: now
     };
     this.rights.set(right.id, right);
+    this.serviceEventsByEntitlement.set(right.id, []);
     return clone(right);
   }
 
@@ -113,18 +121,23 @@ export class InMemoryLedger implements ServiceRightLedger {
   ): Promise<ServiceRight> {
     const normalizedProviderId = requireText(providerId, "providerId", 128);
     const normalizedClaimant = requireText(claimant, "claimant", 256);
-    const eventKey = `${normalizedProviderId}:${requireText(options.serviceEventId, "serviceEventId", 256)}`;
+    const serviceEventId = requireText(options.serviceEventId, "serviceEventId", 256);
+    const eventKey = `${normalizedProviderId}:${serviceEventId}`;
     const requestHash = requireRequestHash(options.requestHash);
+    const serviceType = options.serviceType ?? "REPAIR";
+    const unitsConsumed = options.unitsConsumed ?? 1;
     const existing = this.claimEvents.get(eventKey);
     if (existing) {
       const sameRequest = existing.entitlementId === id
         && existing.claimant === normalizedClaimant
         && existing.providerId === normalizedProviderId
-        && existing.requestHash === requestHash;
+        && existing.requestHash === requestHash
+        && existing.serviceType === serviceType
+        && existing.unitsConsumed === unitsConsumed;
       if (!sameRequest) {
         throw new SkillPassError(
           "IDEMPOTENCY_CONFLICT",
-          "serviceEventId was already used for a different claim request",
+          "serviceEventId was already used for a different service request",
           409
         );
       }
@@ -132,16 +145,52 @@ export class InMemoryLedger implements ServiceRightLedger {
     }
 
     const right = this.require(id);
-    const next = claimServiceRight(right, normalizedClaimant, normalizedProviderId, options);
+    const next = consumeServiceRight(
+      right,
+      normalizedClaimant,
+      normalizedProviderId,
+      { expectedVersion: options.expectedVersion, serviceType, unitsConsumed }
+    );
+    const event: ServiceEventRecord = {
+      eventVersion: 1,
+      eventId: serviceEventId,
+      entitlementId: id,
+      providerId: normalizedProviderId,
+      claimant: normalizedClaimant,
+      serviceType,
+      unitsConsumed,
+      requestHash,
+      entitlementVersionBefore: right.version,
+      entitlementVersionAfter: next.version,
+      remainingClaimsAfter: next.remainingClaims,
+      occurredAt: next.updatedAt
+    };
+
     this.rights.set(next.id, next);
     this.claimEvents.set(eventKey, {
       entitlementId: id,
       claimant: normalizedClaimant,
       providerId: normalizedProviderId,
       requestHash,
-      result: clone(next)
+      serviceType,
+      unitsConsumed,
+      result: clone(next),
+      event: clone(event)
     });
+    const history = this.serviceEventsByEntitlement.get(id) ?? [];
+    history.push(clone(event));
+    this.serviceEventsByEntitlement.set(id, history);
     return clone(next);
+  }
+
+  async listServiceEvents(
+    id: EntitlementId,
+    filter: ServiceEventListFilter = {}
+  ): Promise<ServiceEventRecord[]> {
+    this.require(id);
+    return (this.serviceEventsByEntitlement.get(id) ?? [])
+      .filter((event) => filter.providerId === undefined || event.providerId === filter.providerId)
+      .map(clone);
   }
 
   async setStatus(
@@ -157,12 +206,13 @@ export class InMemoryLedger implements ServiceRightLedger {
   }
 
   async health(): Promise<LedgerHealth> {
-    return { mode: "memory", ready: true, detail: "in-memory pilot ledger" };
+    return { mode: "memory", ready: true, detail: "in-memory Care coverage ledger (demo/single-process only)" };
   }
 
   async resetDemo(): Promise<ServiceRight> {
     this.rights.clear();
     this.claimEvents.clear();
+    this.serviceEventsByEntitlement.clear();
     return this.issue({
       issuerId: "seller-demo",
       productCommitment: "sha256:42f4dc06f496e6209f50c0849c4fb14d0b2a4f752d636a28bb7e091ea462863c",

@@ -1,10 +1,12 @@
-import type { ServiceRight } from "@skillpass/core";
-import { SERVICE_RIGHT_SCHEMA_VERSION } from "@skillpass/core";
-import { SkillPassError, type EntitlementStatus, type ProviderId } from "@skillpass/shared";
+import type { ServiceRight } from "@skillpass-care/core";
+import { SERVICE_RIGHT_SCHEMA_VERSION } from "@skillpass-care/core";
+import { SkillPassError, type EntitlementStatus, type ProviderId } from "@skillpass-care/shared";
 
 /**
- * Canonical V1 payload intended for CKB Cell data.
- * The owner is intentionally absent: in CKB mode ownership MUST come from Cell.lock.
+ * @deprecated Legacy Care V1 prototype payload retained for compatibility tests.
+ * The target funding architecture uses the canonical SkillPass ownership capability
+ * and keeps mutable Care service-event/quota state in the Care application layer.
+ * The owner is intentionally absent: ownership MUST come from authoritative live state.
  */
 export interface CkbServiceRightDataV1 {
   schemaVersion: 1;

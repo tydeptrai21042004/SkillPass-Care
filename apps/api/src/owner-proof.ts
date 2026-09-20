@@ -7,14 +7,15 @@ import {
   type OwnerProofAction,
   type Principal,
   type ProviderId,
-  type ServiceEventId
-} from "@skillpass/shared";
-import { hashCanonical } from "@skillpass/provider-sdk";
+  type ServiceEventId,
+  type CareServiceType
+} from "@skillpass-care/shared";
+import { hashCanonical } from "@skillpass-care/provider-sdk";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PAYLOAD_KEYS = new Set([
   "version", "challengeId", "entitlementId", "providerId", "claimant",
-  "action", "serviceEventId", "issuedAt", "expiresAt"
+  "action", "serviceEventId", "serviceType", "unitsConsumed", "issuedAt", "expiresAt"
 ]);
 
 
@@ -24,12 +25,19 @@ export function issueOwnerChallenge(input: {
   claimant: Principal;
   action: OwnerProofAction;
   serviceEventId?: ServiceEventId;
+  serviceType?: CareServiceType;
+  unitsConsumed?: number;
   secret: string;
   ttlSeconds: number;
   now?: Date;
 }): OwnerChallenge {
   if (input.action === "CLAIM" && !input.serviceEventId?.trim()) {
     throw new SkillPassError("VALIDATION_ERROR", "serviceEventId is required for claim challenges", 400);
+  }
+  const serviceType = input.action === "CLAIM" ? (input.serviceType ?? "REPAIR") : undefined;
+  const unitsConsumed = input.action === "CLAIM" ? (input.unitsConsumed ?? 1) : undefined;
+  if (input.action === "CLAIM" && (!Number.isSafeInteger(unitsConsumed ?? Number.NaN) || (unitsConsumed ?? 0) < 1 || (unitsConsumed ?? 0) > 100)) {
+    throw new SkillPassError("VALIDATION_ERROR", "unitsConsumed must be an integer between 1 and 100", 400);
   }
   if (input.action === "VERIFY" && input.serviceEventId?.trim()) {
     throw new SkillPassError("VALIDATION_ERROR", "serviceEventId is only valid for claim challenges", 400);
@@ -46,6 +54,8 @@ export function issueOwnerChallenge(input: {
     claimant: input.claimant,
     action: input.action,
     serviceEventId: input.serviceEventId?.trim(),
+    serviceType,
+    unitsConsumed,
     issuedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + input.ttlSeconds * 1000).toISOString()
   };
@@ -76,8 +86,8 @@ export function verifyChallengeToken(token: string, secret: string, now = new Da
     throw new SkillPassError("CHALLENGE_EXPIRED", "owner proof challenge has expired", 401);
   }
   if (expiresAt - issuedAt > 600_000) throw invalidChallenge();
-  if (payload.action === "CLAIM" && !payload.serviceEventId) throw invalidChallenge();
-  if (payload.action === "VERIFY" && payload.serviceEventId) throw invalidChallenge();
+  if (payload.action === "CLAIM" && (!payload.serviceEventId || !payload.serviceType || !payload.unitsConsumed)) throw invalidChallenge();
+  if (payload.action === "VERIFY" && (payload.serviceEventId || payload.serviceType || payload.unitsConsumed)) throw invalidChallenge();
   return { ...payload, message: canonicalOwnerChallengeMessage(payload), token };
 }
 
@@ -111,6 +121,8 @@ export function ownerProofRequestHash(challenge: OwnerChallenge): string {
     claimant: challenge.claimant,
     action: challenge.action,
     serviceEventId: challenge.serviceEventId ?? null,
+    serviceType: challenge.serviceType ?? null,
+    unitsConsumed: challenge.unitsConsumed ?? null,
     expiresAt: challenge.expiresAt
   });
 }
@@ -126,7 +138,9 @@ export function claimRequestHash(challenge: OwnerChallenge): string {
     providerId: challenge.providerId,
     claimant: challenge.claimant,
     action: challenge.action,
-    serviceEventId: challenge.serviceEventId
+    serviceEventId: challenge.serviceEventId,
+    serviceType: challenge.serviceType,
+    unitsConsumed: challenge.unitsConsumed
   });
 }
 
@@ -139,6 +153,8 @@ export function canonicalOwnerChallengeMessage(payload: OwnerChallengePayload): 
     `providerId=${payload.providerId}`,
     `claimant=${payload.claimant}`,
     `serviceEventId=${payload.serviceEventId ?? ""}`,
+    `serviceType=${payload.serviceType ?? ""}`,
+    `unitsConsumed=${payload.unitsConsumed ?? ""}`,
     `issuedAt=${payload.issuedAt}`,
     `expiresAt=${payload.expiresAt}`
   ].join("\n");
@@ -153,6 +169,9 @@ function parsePayload(value: unknown): OwnerChallengePayload {
   if (!boundedText(data.entitlementId, 256) || !boundedText(data.providerId, 128) || !boundedText(data.claimant, 256)) throw invalidChallenge();
   if (data.action !== "VERIFY" && data.action !== "CLAIM") throw invalidChallenge();
   if (data.serviceEventId !== undefined && !boundedText(data.serviceEventId, 256)) throw invalidChallenge();
+  const serviceTypes = new Set(["DIAGNOSTIC", "INSPECTION", "REPAIR", "REPLACEMENT", "BATTERY_REPLACEMENT"]);
+  if (data.serviceType !== undefined && (typeof data.serviceType !== "string" || !serviceTypes.has(data.serviceType))) throw invalidChallenge();
+  if (data.unitsConsumed !== undefined && (typeof data.unitsConsumed !== "number" || !Number.isSafeInteger(data.unitsConsumed) || data.unitsConsumed < 1 || data.unitsConsumed > 100)) throw invalidChallenge();
   if (typeof data.issuedAt !== "string" || typeof data.expiresAt !== "string") throw invalidChallenge();
   return data as unknown as OwnerChallengePayload;
 }

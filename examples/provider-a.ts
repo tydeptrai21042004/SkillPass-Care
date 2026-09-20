@@ -1,5 +1,5 @@
-import { InMemoryLedger } from "@skillpass/ckb-adapter";
-import { ProviderVerifier } from "@skillpass/provider-sdk";
+import { InMemoryLedger } from "@skillpass-care/ckb-adapter";
+import { ProviderVerifier } from "@skillpass-care/provider-sdk";
 
 /**
  * Minimal example showing what Repair Shop A actually needs.

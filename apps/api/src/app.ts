@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { z, ZodError } from "zod";
-import type { ServiceRightLedger } from "@skillpass/ckb-adapter";
-import { createHmacEvidenceSigner, ProviderVerifier } from "@skillpass/provider-sdk";
-import { SkillPassError, type OwnerProof } from "@skillpass/shared";
+import type { ServiceRightLedger } from "@skillpass-care/ckb-adapter";
+import { createHmacEvidenceSigner, ProviderVerifier } from "@skillpass-care/provider-sdk";
+import { listCarePlans } from "@skillpass-care/core";
+import { SkillPassError, type CareServiceType, type OwnerProof } from "@skillpass-care/shared";
 import { authenticate, authenticateAny, type ActorType, type CredentialRegistry } from "./auth.js";
 import { createDemoRouter } from "./demo-session.js";
 import {
@@ -43,16 +44,20 @@ const transferSchema = z.object({
   expectedVersion: z.number().int().positive()
 }).strict();
 
+const serviceTypeSchema = z.enum(["DIAGNOSTIC", "INSPECTION", "REPAIR", "REPLACEMENT", "BATTERY_REPLACEMENT"]);
+
 const challengeSchema = z.object({
   claimant: z.string().trim().min(1).max(256),
   action: z.enum(["VERIFY", "CLAIM"]),
-  serviceEventId: z.string().trim().min(1).max(256).optional()
+  serviceEventId: z.string().trim().min(1).max(256).optional(),
+  serviceType: serviceTypeSchema.optional(),
+  unitsConsumed: z.number().int().min(1).max(100).optional()
 }).strict().superRefine((value, ctx) => {
   if (value.action === "CLAIM" && !value.serviceEventId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "serviceEventId is required for CLAIM", path: ["serviceEventId"] });
   }
-  if (value.action === "VERIFY" && value.serviceEventId) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "serviceEventId is only valid for CLAIM", path: ["serviceEventId"] });
+  if (value.action === "VERIFY" && (value.serviceEventId || value.serviceType || value.unitsConsumed)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "service-event fields are only valid for CLAIM", path: ["serviceEventId"] });
   }
 });
 
@@ -71,6 +76,8 @@ const proofRequestSchema = z.object({
 
 const claimSchema = proofRequestSchema.extend({
   serviceEventId: z.string().trim().min(1).max(256),
+  serviceType: serviceTypeSchema.default("REPAIR"),
+  unitsConsumed: z.number().int().min(1).max(100).default(1),
   expectedVersion: z.number().int().positive()
 }).strict();
 
@@ -140,7 +147,7 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
 
   app.get("/", (_req, res) => res.json({
     name: "SkillPass Care API",
-    version: "0.4.0",
+    version: "0.5.0",
     health: "/health/ready",
     demo: options.demoEnabled ? "/demo/state" : null
   }));
@@ -164,11 +171,14 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
       const health = await ledger.health();
       res.json({
         name: "SkillPass Care",
-        apiVersion: "0.4.0",
+        apiVersion: "0.5.0",
         serviceRightSchemaVersion: 1,
         ownerProof: "HMAC-SHA256-PILOT",
         ownerProofTtlSeconds,
         claimIdempotency: true,
+        typedServiceEvents: true,
+        serviceTypeAndUnitsBoundToOwnerProof: true,
+        carePlans: true,
         scopedReads: true,
         demoEnabled: Boolean(options.demoEnabled),
         demoRoute: options.demoEnabled ? "/demo/state" : null,
@@ -177,6 +187,10 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         ckbImplemented: false
       });
     } catch (err) { next(err); }
+  });
+
+  app.get("/care-plans", (_req, res) => {
+    res.json({ plans: listCarePlans() });
   });
 
   app.get("/entitlements", async (req, res, next) => {
@@ -230,6 +244,8 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         claimant: body.claimant,
         action: body.action,
         serviceEventId: body.serviceEventId,
+        serviceType: body.serviceType as CareServiceType | undefined,
+        unitsConsumed: body.unitsConsumed,
         secret: ownerProofSecret,
         ttlSeconds: ownerProofTtlSeconds
       }));
@@ -278,6 +294,53 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
     } catch (err) { next(err); }
   });
 
+  /** Preferred Care operation: record a typed, auditable service event. */
+  app.post("/entitlements/:id/service-events", async (req, res, next) => {
+    try {
+      const providerId = authenticate(req, "provider", credentials);
+      const body = claimSchema.parse(req.body);
+      const challenge = requireOwnerProof({
+        entitlementId: req.params.id,
+        providerId,
+        claimant: body.claimant,
+        action: "CLAIM",
+        serviceEventId: body.serviceEventId,
+        serviceType: body.serviceType,
+        unitsConsumed: body.unitsConsumed,
+        token: body.challengeToken,
+        proof: body.ownerProof,
+        ownerProofSecret,
+        credentials
+      });
+      const entitlement = await ledger.claim(req.params.id, body.claimant, providerId, {
+        expectedVersion: body.expectedVersion,
+        serviceEventId: body.serviceEventId,
+        serviceType: body.serviceType,
+        unitsConsumed: body.unitsConsumed,
+        requestHash: claimRequestHash(challenge)
+      });
+      const event = (await ledger.listServiceEvents(req.params.id, { providerId }))
+        .find((item) => item.eventId === body.serviceEventId);
+      if (!event) throw new SkillPassError("LEDGER_UNAVAILABLE", "service event was not persisted", 503);
+      res.status(201).json({ entitlement, event });
+    } catch (err) { next(err); }
+  });
+
+  app.get("/entitlements/:id/service-events", async (req, res, next) => {
+    try {
+      const actor = authenticateAny(req, ["issuer", "provider", "owner"], credentials);
+      const right = await ledger.get(req.params.id);
+      if (!right || !canReadRight(actor.type, actor.id, right)) {
+        throw new SkillPassError("NOT_FOUND", "entitlement not found", 404);
+      }
+      res.json(await ledger.listServiceEvents(
+        req.params.id,
+        actor.type === "provider" ? { providerId: actor.id } : {}
+      ));
+    } catch (err) { next(err); }
+  });
+
+  /** @deprecated Prefer POST /entitlements/:id/service-events. */
   app.post("/entitlements/:id/claim", async (req, res, next) => {
     try {
       const providerId = authenticate(req, "provider", credentials);
@@ -288,21 +351,21 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         claimant: body.claimant,
         action: "CLAIM",
         serviceEventId: body.serviceEventId,
+        serviceType: body.serviceType,
+        unitsConsumed: body.unitsConsumed,
         token: body.challengeToken,
         proof: body.ownerProof,
         ownerProofSecret,
         credentials
       });
-      res.json(await ledger.claim(
-        req.params.id,
-        body.claimant,
-        providerId,
-        {
-          expectedVersion: body.expectedVersion,
-          serviceEventId: body.serviceEventId,
-          requestHash: claimRequestHash(challenge)
-        }
-      ));
+      res.setHeader("deprecation", "true");
+      res.json(await ledger.claim(req.params.id, body.claimant, providerId, {
+        expectedVersion: body.expectedVersion,
+        serviceEventId: body.serviceEventId,
+        serviceType: body.serviceType,
+        unitsConsumed: body.unitsConsumed,
+        requestHash: claimRequestHash(challenge)
+      }));
     } catch (err) { next(err); }
   });
 
@@ -375,6 +438,8 @@ function requireOwnerProof(input: {
   claimant: string;
   action: "VERIFY" | "CLAIM";
   serviceEventId?: string;
+  serviceType?: CareServiceType;
+  unitsConsumed?: number;
   token: string;
   proof: OwnerProof;
   ownerProofSecret: string;
@@ -385,7 +450,9 @@ function requireOwnerProof(input: {
     && challenge.providerId === input.providerId
     && challenge.claimant === input.claimant
     && challenge.action === input.action
-    && (challenge.serviceEventId ?? undefined) === (input.serviceEventId ?? undefined);
+    && (challenge.serviceEventId ?? undefined) === (input.serviceEventId ?? undefined)
+    && (challenge.serviceType ?? undefined) === (input.serviceType ?? undefined)
+    && (challenge.unitsConsumed ?? undefined) === (input.unitsConsumed ?? undefined);
   if (!matches) throw new SkillPassError("CHALLENGE_INVALID", "challenge is not bound to this request", 401);
   const ownerSecret = input.credentials.owners[input.claimant];
   if (!ownerSecret) throw new SkillPassError("OWNER_PROOF_REQUIRED", "claimant has no configured pilot owner credential", 401);

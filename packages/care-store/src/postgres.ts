@@ -1,11 +1,14 @@
-import { Pool, type PoolClient } from "pg";
+import pg from "pg";
+import type { Pool as PgPool, PoolClient } from "pg";
+
+const { Pool } = pg;
 import { SkillPassError, type ClaimMutationOptions, type EntitlementStatus, type LedgerHealth, type LedgerListFilter, type MutationOptions, type ServiceEventListFilter, type ServiceEventRecord } from "@skillpass-care/shared";
 import { SERVICE_RIGHT_SCHEMA_VERSION, type CareCoverage, type CreateCareCoverageInput } from "@skillpass-care/core";
 import type { CareConsumptionContext, CareCoverageStore } from "./types.js";
 
 export class PostgresCareStore implements CareCoverageStore {
-  private readonly pool: Pool;
-  constructor(connectionString: string | Pool) { this.pool = typeof connectionString === "string" ? new Pool({ connectionString }) : connectionString; }
+  private readonly pool: PgPool;
+  constructor(connectionString: string | PgPool) { this.pool = typeof connectionString === "string" ? new Pool({ connectionString }) : connectionString; }
   async health(): Promise<LedgerHealth> { try { await this.pool.query("select 1"); return { mode:"postgres", ready:true, detail:"durable PostgreSQL Care store" } as LedgerHealth; } catch(e){ return { mode:"postgres", ready:false, detail:e instanceof Error?e.message:"PostgreSQL unavailable" } as LedgerHealth; } }
   async create(input: CreateCareCoverageInput): Promise<CareCoverage> {
     const client=await this.pool.connect(); try { await client.query("BEGIN"); const id=input.id ?? crypto.randomUUID(); const q=await client.query(`INSERT INTO care_coverage(entitlement_id,issuer_id,product_commitment,service_class,remaining_claims,status,version,transferable,expires_at) VALUES($1,$2,$3,$4,$5,'ACTIVE',1,$6,$7) RETURNING *`,[id,input.issuerId,input.productCommitment,input.serviceClass,input.remainingClaims,input.transferable,input.expiresAt]); for(const p of [...new Set(input.acceptedProviderIds)]) await client.query(`INSERT INTO care_provider_acceptance(entitlement_id,provider_id) VALUES($1,$2)`,[id,p]); await client.query("COMMIT"); return this.inflate(client,q.rows[0]); } catch(e){ await client.query("ROLLBACK"); throw e;} finally{client.release();}

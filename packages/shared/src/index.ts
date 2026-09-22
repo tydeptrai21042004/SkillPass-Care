@@ -74,7 +74,7 @@ export interface ClaimMutationOptions extends MutationOptions {
  * this record describes service consumption against that ownership state.
  */
 export interface ServiceEventRecord {
-  eventVersion: 1;
+  eventVersion: 1 | 2;
   eventId: ServiceEventId;
   entitlementId: EntitlementId;
   providerId: ProviderId;
@@ -82,6 +82,10 @@ export interface ServiceEventRecord {
   serviceType: CareServiceType;
   unitsConsumed: number;
   requestHash: string;
+  /** Canonical SkillPass live Cell reference used to authorize this event. */
+  authorizationStateRef?: string;
+  /** Hash of the canonical provider authorization evidence. */
+  authorizationEvidenceHash?: string;
   entitlementVersionBefore: number;
   entitlementVersionAfter: number;
   remainingClaimsAfter: number;
@@ -127,7 +131,7 @@ export interface LedgerListFilter {
 }
 
 export interface LedgerHealth {
-  mode: "memory" | "ckb";
+  mode: "memory" | "ckb" | "postgres";
   ready: boolean;
   detail?: string;
   rpcReachable?: boolean;
@@ -145,6 +149,7 @@ export type SkillPassErrorCode =
   | "CHALLENGE_EXPIRED"
   | "CHALLENGE_INVALID"
   | "LEDGER_UNAVAILABLE"
+  | "STATE_REF_STALE"
   | "NOT_IMPLEMENTED";
 
 export class SkillPassError extends Error {

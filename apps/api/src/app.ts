@@ -312,12 +312,25 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         ownerProofSecret,
         credentials
       });
+      const requestHash = claimRequestHash(challenge);
+      const verifier = new ProviderVerifier({
+        providerId,
+        ledger,
+        evidenceSigner: createHmacEvidenceSigner(providerId, credentials.providers[providerId])
+      });
+      const authorizationEvidence = await verifier.verify({
+        entitlementId: req.params.id,
+        claimant: body.claimant,
+        challengeId: challenge.challengeId,
+        requestHash
+      });
       const entitlement = await ledger.claim(req.params.id, body.claimant, providerId, {
         expectedVersion: body.expectedVersion,
         serviceEventId: body.serviceEventId,
         serviceType: body.serviceType,
         unitsConsumed: body.unitsConsumed,
-        requestHash: claimRequestHash(challenge)
+        requestHash,
+        authorizationEvidence
       });
       const event = (await ledger.listServiceEvents(req.params.id, { providerId }))
         .find((item) => item.eventId === body.serviceEventId);
@@ -358,13 +371,17 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         ownerProofSecret,
         credentials
       });
+      const requestHash = claimRequestHash(challenge);
+      const verifier = new ProviderVerifier({ providerId, ledger });
+      const authorizationEvidence = await verifier.verify({ entitlementId: req.params.id, claimant: body.claimant, challengeId: challenge.challengeId, requestHash });
       res.setHeader("deprecation", "true");
       res.json(await ledger.claim(req.params.id, body.claimant, providerId, {
         expectedVersion: body.expectedVersion,
         serviceEventId: body.serviceEventId,
         serviceType: body.serviceType,
         unitsConsumed: body.unitsConsumed,
-        requestHash: claimRequestHash(challenge)
+        requestHash,
+        authorizationEvidence
       }));
     } catch (err) { next(err); }
   });

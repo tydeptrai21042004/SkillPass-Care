@@ -7,6 +7,8 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(8787),
   WEB_ORIGINS: z.string().default(""),
   LEDGER_MODE: z.enum(["memory", "ckb"]).default("memory"),
+  CARE_STORE_MODE: z.enum(["memory", "postgres"]).default("memory"),
+  DATABASE_URL: z.string().default(""),
   ENABLE_DEMO_ENDPOINTS: bool.default("true"),
   DEMO_SESSION_SECRET: z.string().default(""),
   OWNER_PROOF_CHALLENGE_SECRET: z.string().default(""),
@@ -23,6 +25,8 @@ export interface AppConfig {
   PORT: number;
   WEB_ORIGINS: string[];
   LEDGER_MODE: "memory" | "ckb";
+  CARE_STORE_MODE: "memory" | "postgres";
+  DATABASE_URL: string;
   ENABLE_DEMO_ENDPOINTS: boolean;
   DEMO_SESSION_SECRET: string;
   OWNER_PROOF_CHALLENGE_SECRET: string;
@@ -43,6 +47,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     PROVIDER_KEYS: parseKeyMap(parsed.PROVIDER_KEYS, "PROVIDER_KEYS"),
     OWNER_KEYS: parseKeyMap(parsed.OWNER_KEYS, "OWNER_KEYS")
   };
+
+  if (config.CARE_STORE_MODE === "postgres" && !config.DATABASE_URL.trim()) {
+    throw new Error("DATABASE_URL is required when CARE_STORE_MODE=postgres");
+  }
 
   if (config.NODE_ENV === "production") {
     if (config.ENABLE_DEMO_ENDPOINTS && config.DEMO_SESSION_SECRET.trim().length < 32) {

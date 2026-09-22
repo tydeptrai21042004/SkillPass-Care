@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "concurrently -n api,web \"npm run dev -w @skillpass-care/api\" \"npm run dev -w @skillpass-care/web\"",
-    "build:packages": "npm run build -w @skillpass-care/shared && npm run build -w @skillpass-care/core && npm run build -w @skillpass-care/ckb-adapter && npm run build -w @skillpass-care/provider-sdk && npm run build -w @skillpass-care/config",
+    "build:packages": "npm run build -w @skillpass-care/shared && npm run build -w @skillpass-care/core && npm run build -w @skillpass-care/care-store && npm run build -w @skillpass-care/ckb-adapter && npm run build -w @skillpass-care/provider-sdk && npm run build -w @skillpass-care/config",
     "build:apps": "npm run build -w @skillpass-care/api && npm run build -w @skillpass-care/web",
     "build": "npm run build:packages && npm run build:apps",
     "build:vercel": "npm run build:packages && npm run build -w @skillpass-care/web",

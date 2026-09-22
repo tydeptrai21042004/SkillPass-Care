@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS care_service_event (
   )),
   units_consumed              integer NOT NULL CHECK (units_consumed >= 1 AND units_consumed <= 100),
   request_hash                text NOT NULL CHECK (request_hash ~ '^sha256:[0-9a-f]{64}$'),
+  authorization_state_ref     text NOT NULL,
+  authorization_evidence_hash text NOT NULL CHECK (authorization_evidence_hash ~ '^sha256:[0-9a-f]{64}$'),
   entitlement_version_before  bigint NOT NULL,
   entitlement_version_after   bigint NOT NULL,
   remaining_claims_after      integer NOT NULL CHECK (remaining_claims_after >= 0),
@@ -45,7 +47,8 @@ CREATE INDEX IF NOT EXISTS care_service_event_entitlement_idx
   ON care_service_event (entitlement_id, occurred_at, provider_id, event_id);
 
 -- A durable implementation should commit the coverage decrement and service
--- event insert in one SQL transaction using an optimistic version predicate:
+-- event insert in one SQL transaction using an optimistic version predicate.
+-- The implementation must also re-check authorization_state_ref immediately before COMMIT:
 --
 -- UPDATE care_coverage
 -- SET remaining_claims = remaining_claims - :units,

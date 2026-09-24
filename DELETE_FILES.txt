@@ -1,3 +1,2 @@
-# Delete these stale Vercel entrypoints when applying the changed-files patch:
 api/index.ts
 api/[...path].ts

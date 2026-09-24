@@ -33,12 +33,13 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
         signal: AbortSignal.timeout(5_000)
       });
       if (!response.ok) {
-        return { mode: "ckb", ready: false, rpcReachable: false, detail: `CKB RPC HTTP ${response.status}` };
+        return { mode: "ckb", ownershipMode: "ckb", ready: false, rpcReachable: false, detail: `CKB RPC HTTP ${response.status}` };
       }
       const body = (await response.json()) as { result?: unknown; error?: unknown };
       const rpcReachable = Boolean(body.result) && !body.error;
       return {
         mode: "ckb",
+        ownershipMode: "ckb",
         ready: false,
         rpcReachable,
         detail: rpcReachable
@@ -48,6 +49,7 @@ export class CkbLedgerAdapter implements ServiceRightLedger {
     } catch (error) {
       return {
         mode: "ckb",
+        ownershipMode: "ckb",
         ready: false,
         rpcReachable: false,
         detail: error instanceof Error ? error.message : "CKB RPC unavailable"

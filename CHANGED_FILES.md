@@ -1,51 +1,40 @@
-# v0.5 changed-files patch
+# Changed Files — SkillPass Care canonical-ownership / durable-state hardening
 
-## Apply
+This patch keeps the existing top-level repository structure and focuses on the CKBuilder-review-critical boundary between canonical SkillPass ownership and Care application state.
 
-Overlay this patch onto the existing SkillPass Care repository, then run:
+## Core changes
 
-Linux/macOS:
+- `packages/care-store/src/domain.ts` — one shared Care transition layer used by memory and PostgreSQL.
+- `packages/care-store/src/memory.ts` — shared rules, duplicate-create protection, per-entitlement mutation serialization.
+- `packages/care-store/src/postgres.ts` — row-locked domain transitions, exact idempotent retries, atomic service event + coverage commit, shared status rules.
+- `packages/ckb-adapter/src/canonical-ownership.ts` — request/evidence identity checks and canonical stateRef enforcement.
+- `packages/ckb-adapter/src/split-ledger.ts` — canonical Care attachment to an existing SkillPass entitlement; no fake on-chain issuance.
+- `apps/api/src/runtime.ts` — injectable `CanonicalSkillPassOwnership + CareCoverageStore` composition.
+- `skillpass.protocol.json` — machine-readable compatibility contract with the core SkillPass repo.
 
-```bash
-bash apply-fix.sh
-```
+## Tests added
 
-Windows PowerShell:
+- `packages/care-store/test/domain.test.ts`
+- `packages/ckb-adapter/test/canonical-ownership.test.ts`
+- `packages/ckb-adapter/test/split-canonical.test.ts`
+- `apps/api/test/runtime.test.ts`
 
-```powershell
-./apply-fix.ps1
-```
+## Repository/reviewer hardening
 
-The apply script removes the two stale Vercel routes that cannot be represented by a normal overlay ZIP:
+- restored `.env.example`, `.gitignore`, `.dockerignore`, `.github/workflows/ci.yml`;
+- removed stale `api/index.ts` and `api/[...path].ts` entrypoints;
+- strengthened preflight and Care-boundary verification;
+- updated README/status/integration/durable-store/verification docs;
+- added `docs/NON_GOALS.md` and Provider B example;
+- UI wording now says **No shared entitlement-owner database** instead of the broader/incorrect “No shared customer database”.
 
-```text
-api/[...path].ts
-api/index.ts
-```
+## Validation in this environment
 
-## Main change groups
+- dependency-free Care preflight: PASS;
+- Care architecture/boundary verifier: PASS;
+- cross-repo `ckb-skill` Care compatibility verifier: PASS;
+- targeted TypeScript typecheck for shared/core/Care-domain/memory/canonical adapter: PASS;
+- targeted PostgreSQL source typecheck with local interface stubs: PASS;
+- Node TypeScript syntax checks for changed `.ts` files: PASS.
 
-- Care package namespace separated as `@skillpass-care/*`.
-- Care plans and service types added.
-- typed service-event history and provider-scoped reads added.
-- service type + unit count bound into owner proof and idempotency.
-- flagship Alice -> Provider A -> Bob -> Provider B continuity flow added.
-- durable PostgreSQL Care-state reference schema added.
-- SkillPass ownership vs Care coverage responsibilities documented.
-- release/preflight/CI files corrected.
-
-## Verification performed while preparing the patch
-
-```text
-repository preflight: PASS
-Care boundary verifier: PASS
-TypeScript syntax transpile: 36/36 source files clean
-manual runtime Care lifecycle: PASS
-  Alice diagnostic: 3 -> 2
-  Alice -> Bob transfer: coverage stays 2
-  stale Alice service: rejected
-  Bob repair at Provider B: 2 -> 1
-  service events preserved: 2
-```
-
-The dependency-backed `npm run check` was not executed in the preparation environment because npm registry DNS access returned `EAI_AGAIN`. Run it after dependency installation in your normal networked environment.
+Full npm/Vitest execution could not be performed in this environment because npm registry DNS access returned `EAI_AGAIN`. Run `npm install --no-audit --no-fund && npm run check` in a networked environment before merging.

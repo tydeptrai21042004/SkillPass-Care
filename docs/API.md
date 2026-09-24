@@ -35,12 +35,14 @@ These shared secrets are a controlled-pilot mechanism, not the target CKB identi
 
 Unauthorized detail reads return `404`.
 
-## Issue
+## Issue / attach Care coverage
 
-`POST /entitlements` with issuer credentials:
+`POST /entitlements` with issuer credentials. In demo mode, ownership may be created by the local simulator. In canonical SkillPass mode, supply `entitlementId` for an already-issued SkillPass Capability; Care resolves that identity and creates only the application state.
+
 
 ```json
 {
+  "entitlementId": "optional-existing-skillpass-capability-id",
   "productCommitment": "sha256:...",
   "owner": "alice",
   "serviceClass": "STANDARD_90D",
@@ -51,7 +53,7 @@ Unauthorized detail reads return `404`.
 }
 ```
 
-`issuerId` comes from authenticated credentials. `productHash` remains a deprecated compatibility alias.
+`issuerId` comes from authenticated credentials. In canonical mode, the supplied owner and issuer must agree with the resolved SkillPass entitlement. `productHash` remains a deprecated compatibility alias.
 
 ## Transfer
 
@@ -126,7 +128,7 @@ Response:
 {
   "entitlement": { "remainingClaims": 1, "version": 4 },
   "event": {
-    "eventVersion": 1,
+    "eventVersion": 2,
     "eventId": "repair-bob-001",
     "providerId": "repair-b",
     "claimant": "bob",

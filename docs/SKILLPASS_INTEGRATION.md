@@ -10,13 +10,13 @@ SkillPass Care is a **reference product built on SkillPass**, not a second gener
 | authoritative current owner | Care plan and coverage quota |
 | Alice -> Bob ownership transfer | service-event history |
 | live-state resolution | provider-service workflow |
-| owner proof | issuer suspend/resume/revoke |
+| owner authorization | issuer suspend/resume/revoke |
 | request-bound authorization evidence | privacy-scoped application data |
 | generic provider conformance | second-hand product workflow |
 
-## Target mapping
+The machine-readable compatibility contract is `skillpass.protocol.json`. It pins Capability V2 and the SkillPass package versions expected by the reference integration.
 
-The target SkillPass Capability V2 integration should map Care concepts approximately as follows:
+## Target mapping
 
 | Care concept | SkillPass field / property |
 |---|---|
@@ -34,19 +34,42 @@ Care keeps the mutable business state:
 ```text
 remaining coverage
 service-event history
-provider notes / references
-issuer status reason
+provider references
+issuer suspension/revocation state
 display metadata
 pilot analytics
 ```
 
+Care must never persist an authoritative owner override.
+
+## Runtime composition
+
+`apps/api/src/runtime.ts` exposes `createRuntimeLedger()` / `createRuntimeApp()` with a production injection point for `SkillPassOwnershipPort`.
+
+The intended production composition is:
+
+```text
+CanonicalSkillPassOwnership
+          +
+PostgresCareStore
+          |
+          v
+SplitServiceRightLedger
+```
+
+When `LEDGER_MODE=ckb` but no canonical binding is deliberately injected, the default runtime uses the fail-closed `CkbLedgerAdapter`; it does **not** silently fall back to memory ownership.
+
+This means the repository now has the correct composition boundary without pretending that the cross-repository Testnet binding is already deployed.
+
 ## Freshness rule
 
-A provider must never commit a Care service event solely because an earlier owner proof was valid. Immediately before committing the event, the integration must verify that the SkillPass state reference used by the proof is still current. If the referenced ownership Cell/state has been consumed or superseded, the service event fails closed and the provider must re-authorize the current owner.
+A provider must never commit a Care service event solely because an earlier owner proof was valid.
+
+The Care store checks the SkillPass authorization `stateRef` before applying the transition and again immediately before commit. If the referenced ownership Cell/state has been consumed or superseded, the service event fails closed and the Care mutation rolls back.
 
 ## Funding acceptance flow
 
-The cross-repository milestone is complete only when this sequence is reproducible:
+The cross-repository milestone is complete only when this sequence is reproducible with retained Testnet evidence:
 
 ```text
 1. SkillPass right issued to Alice.
@@ -58,5 +81,3 @@ The cross-repository milestone is complete only when this sequence is reproducib
 7. Care records one Bob service event: 2 -> 1 unit.
 8. Care history contains both provider events while current ownership is Bob.
 ```
-
-This is the flagship proof that Care adds real application value instead of merely mirroring the ownership primitive.

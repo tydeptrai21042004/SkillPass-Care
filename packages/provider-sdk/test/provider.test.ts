@@ -17,7 +17,7 @@ describe("ProviderVerifier", () => {
     expect(initial.allowed).toBe(true);
     expect(initial.providerId).toBe("repair-a");
     expect(initial.requestHash).toMatch(/^sha256:/);
-    expect(initial.stateRef).toBe(`entitlement:${right.id}:v1`);
+    expect(initial.stateRef).toMatch(/^ckb:testnet:0x[0-9a-f]{64}:0$/);
     expect(verifyHmacAuthorizationEvidence(initial, "provider-a-secret")).toBe(true);
     expect(verifyHmacAuthorizationEvidence(initial, "wrong-secret")).toBe(false);
 

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "canonicalProtocol": "SkillPass",
+  "canonicalCapabilityVersion": 2,
+  "expectedPackages": {
+    "@skillpass/capability-codec": "0.7.0",
+    "@skillpass/service-rights": "1.0.0",
+    "@skillpass/provider-verifier": "1.0.0",
+    "@skillpass/ckb-client": "1.0.0"
+  },
+  "mapping": {
+    "currentOwner": "live Cell.lock (never Care application JSON)",
+    "careState": "off-chain application state; never authoritative ownership",
+    "authorizationStateRef": "canonical live CKB outpoint"
+  },
+  "requiredInvariants": [
+    "Care must fail closed when canonical SkillPass ownership cannot be verified",
+    "Care cannot override or persist an authoritative service-right owner",
+    "service consumption must bind to the exact SkillPass authorization stateRef and request hash",
+    "a stale stateRef must roll back the Care mutation before commit",
+    "provider-specific Care policy is applied only after SkillPass ownership authorization"
+  ]
+}

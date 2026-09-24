@@ -117,7 +117,7 @@ export function App() {
         <div className="heroBadges">
           <Badge icon="↔">Transferable</Badge>
           <Badge icon="✓">Multi-provider</Badge>
-          <Badge icon="◌">No shared customer database</Badge>
+          <Badge icon="◌">No shared entitlement-owner database</Badge>
         </div>
       </div>
       <div className="heroVisual" aria-label="Coverage follows ownership illustration">

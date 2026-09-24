@@ -131,10 +131,13 @@ export interface LedgerListFilter {
 }
 
 export interface LedgerHealth {
+  /** Compatibility summary mode. Split ledgers also expose component modes below. */
   mode: "memory" | "ckb" | "postgres";
   ready: boolean;
   detail?: string;
   rpcReachable?: boolean;
+  ownershipMode?: "memory" | "ckb";
+  careStoreMode?: "memory" | "postgres";
 }
 
 export type SkillPassErrorCode =

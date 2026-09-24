@@ -6,27 +6,26 @@
 npm run verify:care
 ```
 
-This verifies repository structure, package versioning, single Vercel entrypoint, the Care-specific namespace, service-event surface, and the documented SkillPass/Care boundary.
+This verifies repository structure, package versioning, the single Vercel entrypoint, the Care-specific namespace, `skillpass.protocol.json`, the service-event surface and the documented SkillPass/Care boundary.
 
-## 2. Full checks
-
-After generating/committing a lockfile in a networked environment:
+From the sibling `ckb-skill` repository, compatibility can also be checked with:
 
 ```bash
-npm ci
-npm run check
+npm run verify:care-compat -- ../SkillPass-Care-main
 ```
 
-Without a lockfile during development:
+## 2. Full checks
 
 ```bash
 npm install --no-audit --no-fund
 npm run check
 ```
 
+A production release should commit a generated `package-lock.json` and switch CI/deployment to `npm ci`.
+
 ## 3. Flagship public demo
 
-Run `npm run dev` and execute this exact sequence in the Product view:
+Run `npm run dev` and execute:
 
 ```text
 Reset
@@ -38,47 +37,25 @@ Provider B verifies Bob
 Bob repair: 2 -> 1
 ```
 
-Expected product property: ownership changes, but remaining Care coverage is not reset.
+Expected property: ownership changes, but remaining Care coverage and service history are preserved.
 
-## 4. Authenticated typed service event
+## 4. Shared domain-rule verification
 
-Create a CLAIM challenge containing:
+The memory and PostgreSQL stores both use `packages/care-store/src/domain.ts`. Tests must show:
 
-```json
-{
-  "claimant":"alice",
-  "action":"CLAIM",
-  "serviceEventId":"diag-alice-001",
-  "serviceType":"DIAGNOSTIC",
-  "unitsConsumed":1
-}
-```
-
-Sign the returned token as Alice, then submit the same fields to:
-
-```text
-POST /entitlements/:id/service-events
-```
-
-Expected response contains both the updated entitlement and a `ServiceEventRecord`.
+- plan/service-type rejection;
+- unit/quota rejection;
+- provider acceptance;
+- expiry/status rejection;
+- optimistic version conflict;
+- irreversible revocation;
+- exact service-event idempotency.
 
 ## 5. Request-tampering test
 
-Request owner approval for:
-
-```text
-DIAGNOSTIC / 1 unit
-```
-
-Then submit the same proof as:
-
-```text
-REPAIR / 1 unit
-```
+Request owner approval for `DIAGNOSTIC / 1 unit`, then submit the proof as `REPAIR / 1 unit` or change `unitsConsumed`.
 
 Expected: `401 CHALLENGE_INVALID`.
-
-Repeat by changing `unitsConsumed`; it must also fail.
 
 ## 6. Transfer-race test
 
@@ -86,11 +63,9 @@ Repeat by changing `unitsConsumed`; it must also fail.
 2. Transfer the right Alice -> Bob.
 3. Attempt to commit Alice's previously approved service event.
 
-Expected: service commit denied because Alice is no longer the current owner.
+Expected: denied; no Care unit is consumed and no event is committed.
 
 ## 7. Cross-provider continuity test
-
-Authenticated API test:
 
 ```text
 Alice + Provider A diagnostic -> 2 units
@@ -98,18 +73,20 @@ transfer -> Bob
 Bob + Provider B repair -> 1 unit
 ```
 
-Then read history as Bob. It must contain both provider events. Read the same history as Provider A: only Provider A's event should be visible.
+The owner can see both events; each provider sees only its own scoped history.
 
 ## 8. Final-unit concurrency test
 
 With one unit remaining, submit two different service events concurrently at the same expected version. Exactly one may commit.
 
-## 9. CKB honesty boundary
+## 9. Canonical SkillPass runtime boundary
 
-Set `LEDGER_MODE=ckb`.
+`createRuntimeLedger()` supports the target composition:
 
-- RPC probe may succeed.
-- readiness remains false.
-- state operations remain fail-closed.
+```text
+CanonicalSkillPassOwnership + PostgresCareStore
+```
 
-This is expected until the canonical SkillPass testnet bridge is connected.
+when the production host injects a canonical `SkillPassOwnershipPort`.
+
+Without that injected binding, `LEDGER_MODE=ckb` remains intentionally fail closed. RPC reachability alone is not treated as ownership integration.

@@ -18,6 +18,7 @@ import {
 } from "./owner-proof.js";
 
 const createSchema = z.object({
+  entitlementId: z.string().trim().min(1).max(256).optional(),
   productCommitment: z.string().trim().regex(/^sha256:[0-9a-f]{64}$/i, "productCommitment must be sha256:<64 hex>").optional(),
   /** @deprecated accepted temporarily for v0.3 clients */
   productHash: z.string().trim().regex(/^sha256:[0-9a-f]{64}$/i, "productHash must be sha256:<64 hex>").optional(),
@@ -184,7 +185,9 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
         demoRoute: options.demoEnabled ? "/demo/state" : null,
         ledgerMode: health.mode,
         ledgerReady: health.ready,
-        ckbImplemented: false
+        ownershipMode: health.ownershipMode ?? null,
+        careStoreMode: health.careStoreMode ?? null,
+        ckbImplemented: health.ownershipMode === "ckb" && health.ready
       });
     } catch (err) { next(err); }
   });
@@ -216,8 +219,8 @@ export function createApp(ledger: ServiceRightLedger, options: ApiOptions = {}) 
       const issuerId = authenticate(req, "issuer", credentials);
       const input = createSchema.parse(req.body);
       const productCommitment = input.productCommitment ?? input.productHash!;
-      const { productHash: _legacy, ...rest } = input;
-      res.status(201).json(await ledger.issue({ ...rest, productCommitment, issuerId }));
+      const { productHash: _legacy, entitlementId, ...rest } = input;
+      res.status(201).json(await ledger.issue({ ...rest, id: entitlementId, productCommitment, issuerId }));
     } catch (err) { next(err); }
   });
 
